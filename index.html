@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高德地图步行可达范围查询</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 320px;
+            height: 100%;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .btn:hover {
+            background: #40a9ff;
+        }
+
+        .btn:disabled {
+            background: #d9d9d9;
+            cursor: not-allowed;
+        }
+
+        .hint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #999;
+            line-height: 1.5;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f0f9ff;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #0066cc;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .error {
+            background: #fff2f0;
+            color: #ff4d4f;
+        }
+
+        #container {
+            position: fixed;
+            top: 0;
+            left: 320px;
+            right: 0;
+            bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>🚶 步行可达范围查询</h2>
+
+        <div class="form-group">
+            <label>中心点经度</label>
+            <input type="number" id="lng" placeholder="例如: 116.397428" step="0.000001">
+        </div>
+
+        <div class="form-group">
+            <label>中心点纬度</label>
+            <input type="number" id="lat" placeholder="例如: 39.90923" step="0.000001">
+        </div>
+
+        <div class="form-group">
+            <label>步行时耗（分钟）</label>
+            <input type="number" id="time" placeholder="例如: 10" min="1" max="60" value="10">
+        </div>
+
+        <button class="btn" id="searchBtn" onclick="search()">🔍 查询可达范围</button>
+
+        <div class="hint">
+            💡 提示：点击地图可选择中心点<br>
+            🔧 需要高德地图Web服务API key
+        </div>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <div id="container"></div>
+
+    <script type="text/javascript">
+        // 高德地图API Key
+        const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
+
+        let map = null;
+        let driving = null;
+        let polygon = null;
+
+        // 加载高德地图API
+        function loadScript() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.type = 'text/javascript';
+                script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.Driving`;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        // 初始化地图
+        async function init() {
+            try {
+                await loadScript();
+
+                // 创建地图实例
+                map = new AMap.Map('container', {
+                    zoom: 12,
+                    center: [116.397428, 39.90923],
+                    viewMode: '2D',
+                    mapStyle: 'amap://styles/normal'
+                });
+
+                // 创建驾车服务实例
+                driving = new AMap.Driving({
+                    policy: AMap.DrivingPolicy.LEAST_TIME
+                });
+
+                // 添加点击事件，设置中心点
+                map.on('click', function(e) {
+                    document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
+                    document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
+
+                    // 添加标记
+                    new AMap.Marker({
+                        position: [e.lnglat.getLng(), e.lnglat.getLat()],
+                        map: map
+                    });
+                });
+
+                showResult('地图加载成功！', false);
+            } catch (error) {
+                showResult('地图加载失败：' + error.message, true);
+            }
+        }
+
+        // 查询可达范围
+        function search() {
+            const lng = document.getElementById('lng').value;
+            const lat = document.getElementById('lat').value;
+            const time = document.getElementById('time').value;
+
+            if (!lng || !lat || !time) {
+                showResult('请填写完整信息', true);
+                return;
+            }
+
+            showResult('正在查询...', false);
+
+            // 清除旧的覆盖物
+            if (polygon) {
+                map.remove(polygon);
+                polygon = null;
+            }
+
+            // 高德地图使用服务区域分析API
+            // 由于高德Web API的限制，这里使用周边多边形估算
+            calculateAccessibleArea(parseFloat(lng), parseFloat(lat), parseInt(time));
+        }
+
+        // 计算可达范围（简化版：基于步行速度估算圆形区域）
+        function calculateAccessibleArea(lng, lat, timeMinutes) {
+            // 步行速度约为 5km/h = 83.3m/min
+            const walkingSpeed = 83.3; // 米/分钟
+            const radius = walkingSpeed * timeMinutes; // 半径（米）
+
+            // 计算覆盖多边形（近似圆形）
+            const points = [];
+            const segments = 32; // 分段数
+
+            for (let i = 0; i < segments; i++) {
+                const angle = (i / segments) * 360 * (Math.PI / 180);
+                // 这里简化计算，实际应该使用地理坐标转换
+                // 纬度1度 ≈ 111km，经度1度 ≈ 111km * cos(纬度)
+                const latOffset = (radius / 111000) * Math.sin(angle);
+                const lngOffset = (radius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle);
+
+                points.push([
+                    lng + lngOffset,
+                    lat + latOffset
+                ]);
+            }
+            points.push(points[0]); // 闭合多边形
+
+            // 创建多边形覆盖物
+            polygon = new AMap.Polygon({
+                path: points,
+                strokeColor: '#1890ff',
+                strokeWeight: 2,
+                strokeOpacity: 0.8,
+                fillColor: '#1890ff',
+                fillOpacity: 0.2
+            });
+
+            map.add(polygon);
+            map.setFitView([polygon]);
+
+            // 添加中心点标记
+            new AMap.Marker({
+                position: [lng, lat],
+                map: map
+            });
+
+            const area = Math.PI * (radius * radius);
+            showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(radius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里`, false);
+        }
+
+        // 显示结果
+        function showResult(message, isError) {
+            const resultEl = document.getElementById('result');
+            resultEl.innerHTML = message;
+            resultEl.className = 'result show';
+            if (isError) {
+                resultEl.classList.add('error');
+            }
+        }
+
+        // 页面加载完成后初始化
+        window.onload = init;
+    </script>
+</body>
+</html>
