@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -60,16 +60,18 @@
         let map = null, driving = null, polygon = null, markers = [], debugMarkers = [];
         let measureMode = false;
         let measurePoints = [];
+
         function loadScript() {
             return new Promise(function(resolve, reject) {
                 const script = document.createElement('script');
                 script.type = 'text/javascript';
-                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving,AMap.RulerTool';
+                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving';
                 script.onload = resolve;
                 script.onerror = reject;
                 document.head.appendChild(script);
             });
         }
+
         async function init() {
             try {
                 await loadScript();
@@ -91,6 +93,7 @@
                 showResult('Map failed: ' + error.message, true);
             }
         }
+
         function toggleMeasure() {
             measureMode = !measureMode;
             if (measureMode) {
@@ -101,6 +104,7 @@
                 showResult('Measure mode OFF.', false);
             }
         }
+
         function clearMeasure() {
             measureMode = false;
             document.getElementById('measureBtn').classList.remove('active');
@@ -108,10 +112,12 @@
             clearMarkers();
             showResult('Measurements cleared.', false);
         }
+
         function addMeasurePoint(lng, lat) {
             measurePoints.push({ lng: lng, lat: lat });
             const marker = new AMap.Marker({ position: [lng, lat], map: map });
             markers.push(marker);
+            
             if (measurePoints.length === 2) {
                 const distance = calculateDistance(measurePoints[0], measurePoints[1]);
                 const polyline = new AMap.Polyline({
@@ -124,16 +130,16 @@
                 showResult('Distance: ' + distance.toFixed(2) + ' meters', false);
             }
         }
+
         function calculateDistance(p1, p2) {
             const R = 6371000;
             const dLat = (p2.lat - p1.lat) * Math.PI / 180;
             const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
-                      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c;
         }
+
         function search() {
             const lng = document.getElementById('lng').value;
             const lat = document.getElementById('lat').value;
@@ -151,13 +157,14 @@
             clearMarkers();
             calculateAccessibleAreaWithGrid(parseFloat(lng), parseFloat(lat), parseInt(time), parseInt(gridSize));
         }
+
         function clearMarkers() {
             markers.forEach(function(marker) { map.remove(marker); });
             markers = [];
             debugMarkers.forEach(function(marker) { map.remove(marker); });
             debugMarkers = [];
-            measurePoints = [];
         }
+
         function clearMap() {
             if (polygon) {
                 map.remove(polygon);
@@ -170,23 +177,28 @@
             measureMode = false;
             showResult('Cleared', false);
         }
+
         function getWalkingDuration(origin, destination) {
             return new Promise(function(resolve, reject) {
                 const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 const url = 'https://restapi.amap.com/v3/direction/walking?key=' + AMAP_WEB_KEY + '&origin=' + origin.lng + ',' + origin.lat + '&destination=' + destination.lng + ',' + destination.lat + '&output=json&callback=' + callbackName;
+                
                 window[callbackName] = function(data) {
                     delete window[callbackName];
                     const script = document.getElementById(callbackName);
                     if (script) {
                         document.head.removeChild(script);
                     }
-                    if (data.status === '1'') {
+                    
+                    if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
                         const distance = parseFloat(data.route.paths[0].distance);
-                        resolve(distance / 83.33 * 60);
+                        const time = distance / 83.33 * 60;
+                        resolve(time);
                     } else {
                         reject(data.info || 'Failed');
                     }
                 };
+                
                 const script = document.createElement('script');
                 script.id = callbackName;
                 script.src = url;
@@ -194,6 +206,7 @@
                 document.head.appendChild(script);
             });
         }
+
         async function calculateAccessibleAreaWithGrid(lng, lat, timeMinutes, gridSize) {
             const maxTime = timeMinutes * 60;
             const walkingSpeed = 83.3;
@@ -206,26 +219,33 @@
             const origin = { lng: lng, lat: lat };
             let totalChecked = 0, successCount = 0, failCount = 0;
             const showDebug = document.getElementById('showDebugPoints').checked;
+            
             console.log('Search radius: ' + searchRadius + ', cells: ' + gridCells);
+            
             for (let ring = gridCells; ring >= 1; ring--) {
                 const currentRadius = ring * gridSize;
                 const circumference = 2 * Math.PI * currentRadius;
                 const numPoints = Math.max(6, Math.floor(circumference / gridSize));
+                
                 for (let i = 0; i < numPoints; i++) {
                     const angle = (i / numPoints) * 360 * (Math.PI / 180);
                     let directionIndex = Math.floor((angle % (2 * Math.PI)) / anglePerDirection);
                     if (directionIndex < 0) directionIndex += numDirections;
                     directionIndex = directionIndex % numDirections;
+                    
                     if (farthestPoints.has(directionIndex)) continue;
+                    
                     const point = {
                         lng: lng + (currentRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
                         lat: lat + (currentRadius / 111000) * Math.sin(angle),
                         distance: currentRadius,
                         angle: angle
                     };
+                    
                     try {
                         const duration = await getWalkingDuration(origin, point);
                         totalChecked++;
+                        
                         if (showDebug) {
                             const debugMarker = new AMap.CircleMarker({
                                 center: [point.lng, point.lat],
@@ -238,6 +258,7 @@
                             });
                             debugMarkers.push(debugMarker);
                         }
+                        
                         if (duration <= maxTime) {
                             farthestPoints.set(directionIndex, point);
                             successCount++;
@@ -247,7 +268,9 @@
                     }
                 }
             }
+            
             console.log('Found: ' + successCount + ', Total: ' + totalChecked + ', Failed: ' + failCount);
+            
             if (farthestPoints.size < numDirections * 0.5) {
                 const fallbackPoints = [];
                 for (let i = 0; i < numDirections; i++) {
@@ -259,8 +282,10 @@
                         angle: angle
                     });
                 }
+                
                 const boundaryPoints = fallbackPoints;
                 boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
+                
                 if (showDebug) {
                     boundaryPoints.forEach(function(p) {
                         const debugMarker = new AMap.CircleMarker({
@@ -275,8 +300,10 @@
                         debugMarkers.push(debugMarker);
                     });
                 }
+                
                 const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
                 polygonPath.push(polygonPath[0]);
+                
                 polygon = new AMap.Polygon({
                     path: polygonPath,
                     strokeColor: '#ff9800',
@@ -287,14 +314,18 @@
                 });
                 map.add(polygon);
                 map.setFitView([polygon]);
+                
                 const centerMarker = new AMap.Marker({ position: [lng, lat], map: map });
                 markers.push(centerMarker);
+                
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
                 showResult('Using estimated values. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points.', false);
                 return;
             }
+            
             const boundaryPoints = Array.from(farthestPoints.values());
             boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
+            
             if (showDebug) {
                 boundaryPoints.forEach(function(p) {
                     const debugMarker = new AMap.CircleMarker({
@@ -309,8 +340,10 @@
                     debugMarkers.push(debugMarker);
                 });
             }
+            
             const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
             polygonPath.push(polygonPath[0]);
+            
             polygon = new AMap.Polygon({
                 path: polygonPath,
                 strokeColor: '#1890ff',
@@ -321,11 +354,14 @@
             });
             map.add(polygon);
             map.setFitView([polygon]);
+            
             const centerMarker = new AMap.Marker({ position: [lng, lat], map: map });
             markers.push(centerMarker);
+            
             const area = Math.PI * (estimatedRadius * estimatedRadius);
             showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points.', false);
         }
+
         function showResult(message, isError) {
             const resultEl = document.getElementById('result');
             resultEl.innerHTML = message;
@@ -334,6 +370,7 @@
                 resultEl.classList.add('error');
             }
         }
+
         window.onload = init;
     </script>
 </body>
