@@ -109,6 +109,24 @@
             flex: 1;
         }
 
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .checkbox-group label {
+            margin-left: 8px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
         .hint {
             margin-top: 10px;
             font-size: 12px;
@@ -149,7 +167,7 @@
         <h2>🚶 步行可达范围查询</h2>
 
         <div class="form-group">
-            <label>中心点经度</</label>
+            <label>中心点经度</label>
             <input type="number" id="lng" placeholder="例如: 106.554" step="0.000001" value="106.554">
         </div>
 
@@ -174,6 +192,11 @@
             <small>网格越小结果越精确，但查询时间更长</small>
         </div>
 
+        <div class="checkbox-group">
+            <input type="checkbox" id="showDebugPoints">
+            <label for="showDebugPoints">显示搜索点（🟡黄色=查询点，🔴红色=边界点）</label>
+        </div>
+
         <div class="btn-group">
             <button class="btn" id="searchBtn" onclick="search()">🔍 查询</button>
             <button class="btn btn-secondary" onclick="clearMap()">🧹 清除</button>
@@ -181,6 +204,7 @@
 
         <div class="hint">
             💡 提示：点击地图可选择中心点<br>
+            📏 量距功能：按住Shift点击地图可启用<br>
             🔧 需要高德地图Web服务API key
         </div>
 
@@ -198,13 +222,15 @@
         let driving = null;
         let polygon = null;
         let markers = []; // 存储所有标记
+        let debugMarkers = []; // 存储调试标记点
+        let ruler = null; // 量距工具
 
         // 加载高德地图API
         function loadScript() {
             return new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.type = 'text/javascript';
-                script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.Driving`;
+                script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.Driving,AMap.RulerTool`;
                 script.onload = resolve;
                 script.onerror = reject;
                 document.head.appendChild(script);
@@ -224,13 +250,23 @@
                     mapStyle: 'amap://styles/normal'
                 });
 
-                // 创建驾车服务实例
-                driving = new AMap.Driving({
-                    policy: AMap.DrivingPolicy.LEAST_TIME
+                // 创建量距工具
+                ruler = new AMap.RulerTool(map, {
+                    rulerStyle: {
+                        strokeColor: '#1890ff',
+                        lineWidth: 2
+                    },
+                    showLabel: true,
+                    limitMarkers: 10
                 });
 
-                // 添加点击事件，设置中心点
+                // Shift+点击启用量距工具
                 map.on('click', function(e) {
+                    if (e.originalEvent && e.originalEvent.shiftKey) {
+                        ruler.turnOn();
+                        return;
+                    }
+
                     document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
                     document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
 
@@ -245,7 +281,7 @@
                     markers.push(marker);
                 });
 
-                showResult('地图加载成功！', false);
+                showResult(''地图加载成功！<br>💡 按住Shift+点击可开启量距工具', false);
             } catch (error) {
                 showResult('地图加载失败：' + error.message, true);
             }
@@ -284,6 +320,12 @@
                 map.remove(marker);
             });
             markers = [];
+
+            // 清除调试标记
+            debugMarkers.forEach(marker => {
+                map.remove(marker);
+            });
+            debugMarkers = [];
         }
 
         // 清除所有内容
@@ -296,6 +338,12 @@
 
             // 清除标记
             clearMarkers();
+
+            // 清除量距工具
+            if (ruler) {
+                ruler.turnOff();
+                ruler.clear();
+            }
 
             // 清空输入框
             document.getElementById('lng').value = '';
@@ -364,6 +412,8 @@
             let successCount = 0;
             let failCount = 0;
 
+            const showDebug = document.getElementById('showDebugPoints').checked;
+
             console.log('开始搜索，搜索半径:', searchRadius, '网格层数:', gridCells);
 
             for (let ring = gridCells; ring >= 1; ring--) {
@@ -394,6 +444,20 @@
                     try {
                         const duration = await getWalkingDuration(origin, point);
                         totalChecked++;
+
+                        // 显示所有查询点（黄色）
+                        if (showDebug) {
+                            const debugMarker = new AMap.CircleMarker({
+                                center: [point.lng, point.lat],
+                                radius: 5,
+                                strokeColor: '#FFD700',
+                                strokeWeight: 1,
+                                fillColor: '#FFD700',
+                                fillOpacity: 0.8,
+                                map: map
+                            });
+                            debugMarkers.push(debugMarker);
+                        }
 
                         if (duration <= maxTime) {
                             // 可达，记录为这个方向的最远点
@@ -428,6 +492,22 @@
                 const boundaryPoints = fallbackPoints;
                 boundaryPoints.sort((a, b) => a.angle - b.angle);
 
+                // 显示边界点（红色）
+                if (showDebug) {
+                    boundaryPoints.forEach(p => {
+                        const debugMarker = new AMap.CircleMarker({
+                            center: [p.lng, p.lat],
+                            radius: 8,
+                            strokeColor: '#FF0000',
+                            strokeWeight: 2,
+                            fillColor: '#FF0000',
+                            fillOpacity: 0.8,
+                            map: map
+                        });
+                        debugMarkers.push(debugMarker);
+                    });
+                }
+
                 const polygonPath = boundaryPoints.map(p => [p.lng, p.lat]);
                 polygonPath.push(polygonPath[0]);
 
@@ -457,6 +537,22 @@
             // 收集所有方向的最远点并按角度排序
             const boundaryPoints = Array.from(farthestPoints.values());
             boundaryPoints.sort((a, b) => a.angle - b.angle);
+
+            // 显示边界点（红色）
+            if (showDebug) {
+                boundaryPoints.forEach(p => {
+                    const debugMarker = new AMap.CircleMarker({
+                        center: [p.lng, p.lat],
+                        radius: 8,
+                        strokeColor: '#FF0000',
+                        strokeWeight: 2,
+                        fillColor: '#FF0000',
+                        fillOpacity: 0.8,
+                        map: map
+                    });
+                    debugMarkers.push(debugMarker);
+                });
+            }
 
             // 转换为坐标数组
             const polygonPath = boundaryPoints.map(p => [p.lng, p.lat]);
@@ -501,4 +597,3 @@
     </script>
 </body>
 </html>
->
