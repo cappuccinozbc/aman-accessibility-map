@@ -346,11 +346,11 @@
             const walkingSpeed = 83.3; // 步行速度（米/分钟）
             const estimatedRadius = walkingSpeed * timeMinutes; // 估算半径
 
-            // 搜索范围：估算半径的1.5倍
-            const searchRadius = estimatedRadius * 1.5;
+            // 搜索范围：估算半径的2倍（扩大范围）
+            const searchRadius = estimatedRadius * 2.0;
 
             // 方向分段数（用于分组收集最外围点）
-            const numDirections = 48;
+            const numDirections = 36; // 减少到36个方向，更容易找到点
             const anglePerDirection = (2 * Math.PI) / numDirections;
 
             // 存储每个方向的最远可达点
@@ -361,17 +361,22 @@
             const origin = { lng, lat };
             let totalChecked = 0;
             let successCount = 0;
+            let failCount = 0;
+
+            console.log('开始搜索，搜索半径:', searchRadius, '网格层数:', gridCells);
 
             for (let ring = gridCells; ring >= 1; ring--) {
                 const currentRadius = ring * gridSize;
                 const circumference = 2 * Math.PI * currentRadius;
-                const numPoints = Math.max(8, Math.floor(circumference / gridSize));
+                const numPoints = Math.max(6, Math.floor(circumference / gridSize));
 
                 for (let i = 0; i < numPoints; i++) {
                     const angle = (i / numPoints) * 360 * (Math.PI / 180);
 
-                    // 计算属于哪个方向
-                    const directionIndex = Math.floor(((angle + Math.PI) % (2 * Math.PI)) / anglePerDirection);
+                    // 计算属于哪个方向（修复角度计算）
+                    let directionIndex = Math.floor((angle % (2 * Math.PI)) / anglePerDirection);
+                    if (directionIndex < 0) directionIndex += numDirections;
+                    directionIndex = directionIndex % numDirections;
 
                     // 如果这个方向已经找到了最远点，跳过
                     if (farthestPoints.has(directionIndex)) {
@@ -395,14 +400,56 @@
                             successCount++;
                         }
                     } catch (error) {
-                        console.log('查询失败:', error);
+                        failCount++;
+                        // 失败不打印，避免控制台刷屏
                     }
                 }
             }
 
-            // 如果没有找到可达点，返回估算值
-            if (farthestPoints.size === 0) {
-                showResult('❌ 未找到可达点，请检查网络或扩大搜索范围', true);
+            console.log('搜索完成，找到可达点:', successCount, '总查询:', totalChecked, '失败:', failCount);
+
+            // 如果找到的点太少，使用备用方案
+            if (farthestPoints.size < numDirections * 0.5) {
+                console.log('可达点太少，使用备用方案');
+
+                // 备用方案：使用估算值
+                const fallbackPoints = [];
+                for (let i = 0; i < numDirections; i++) {
+                    const angle = (i / numDirections) * 360 * (Math.PI / 180);
+                    const radius = estimatedRadius;
+                    fallbackPoints.push({
+                        lng: lng + (radius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
+                        lat: lat + (radius / 111000) * Math.sin(angle),
+                        angle: angle
+                    });
+                }
+
+                const boundaryPoints = fallbackPoints;
+                boundaryPoints.sort((a, b) => a.angle - b.angle);
+
+                const polygonPath = boundaryPoints.map(p => [p.lng, p.lat]);
+                polygonPath.push(polygonPath[0]);
+
+                polygon = new AMap.Polygon({
+                    path: polygonPath,
+                    strokeColor: '#ff9800', // 橙色表示备用方案
+                    strokeWeight: 2,
+                    strokeOpacity: 0.8,
+                    fillColor: '#ff9800',
+                    fillOpacity: 0.2
+                });
+
+                map.add(polygon);
+                map.setFitView([polygon]);
+
+                const centerMarker = new AMap.Marker({
+                    position: [lng, lat],
+                    map: map
+                });
+                markers.push(centerMarker);
+
+                const area = Math.PI * (estimatedRadius * estimatedRadius);
+                showResult(`⚠️ 网格查询结果不足，使用估算值<br>步行 ${timeMinutes} 分钟约 ${(estimatedRadius).toFixed(0)} 米<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（查询 ${totalChecked} 个点，${failCount} 次失败）`, false);
                 return;
             }
 
