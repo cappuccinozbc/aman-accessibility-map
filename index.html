@@ -320,8 +320,9 @@
                     }
 
                     if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
-                        // 步行时间（秒）
-                        resolve(data.route.paths[0].steps.reduce((total, step) => total + step.duration, 0));
+                        // 高德API直接返回总duration（秒）
+                        const duration = data.route.paths[0].duration;
+                        resolve(duration);
                     } else {
                         console.log('API返回错误:', data);
                         reject(data.info || '查询失败');
