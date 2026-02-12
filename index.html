@@ -148,7 +148,8 @@
 
     <script type="text/javascript">
         // 高德地图API Key
-        const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
+        const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb'; // Web端key（用于显示地图）
+        const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec'; // Web服务key（用于API调用）
 
         let map = null;
         let driving = null;
@@ -226,33 +227,96 @@
             calculateAccessibleArea(parseFloat(lng), parseFloat(lat), parseInt(time));
         }
 
-        // 计算可达范围（简化版：基于步行速度估算圆形区域）
-        function calculateAccessibleArea(lng, lat, timeMinutes) {
-            // 步行速度约为 5km/h = 83.3m/min
-            const walkingSpeed = 83.3; // 米/分钟
-            const radius = walkingSpeed * timeMinutes; // 半径（米）
+        // 计算步行时间（使用高德Web服务API）
+        function getWalkingDuration(origin, destination) {
+            return new Promise((resolve, reject) => {
+                const url = `https://restapi.amap.com/v3/direction/walking?key=${AMAP_WEB_KEY}&origin=${origin.lng},${origin.lat}&destination=${destination.lng},${destination.lat}`;
 
-            // 计算覆盖多边形（近似圆形）
-            const points = [];
-            const segments = 32; // 分段数
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
+                            // 步行时间（秒）
+                            resolve(data.route.paths[0].steps.reduce((total, step) => total + step.duration, 0));
+                        } else {
+                            console.log('API返回错误:', data);
+                            reject(data.info || '查询失败');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('API调用失败:', error);
+                        reject(error);
+                    });
+            });
+        }
+
+        // 计算可达范围（使用真实步行时间）
+        async function calculateAccessibleArea(lng, lat, timeMinutes) {
+            const maxTime = timeMinutes * 60; // 转换为秒
+            const radius = Math.max(500, 83.3 * timeMinutes); // 估算初始半径（米）
+
+            // 生成候选点（32个方向）
+            const candidatePoints = [];
+            const segments = 32;
 
             for (let i = 0; i < segments; i++) {
                 const angle = (i / segments) * 360 * (Math.PI / 180);
-                // 这里简化计算，实际应该使用地理坐标转换
-                // 纬度1度 ≈ 111km，经度1度 ≈ 111km * cos(纬度)
                 const latOffset = (radius / 111000) * Math.sin(angle);
                 const lngOffset = (radius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle);
 
-                points.push([
-                    lng + lngOffset,
-                    lat + latOffset
-                ]);
+                candidatePoints.push({
+                    lng: lng + lngOffset,
+                    lat: lat + latOffset,
+                    angle: angle
+                });
             }
-            points.push(points[0]); // 闭合多边形
+
+            // 查询每个方向上步行时间正好等于maxTime的点（二分查找）
+            const boundaryPoints = [];
+            const origin = { lng, lat };
+
+            for (let i = 0; i < candidatePoints.length; i++) {
+                const point = candidatePoints[i];
+
+                try {
+                    // 二分查找边界点
+                    let left = 0;
+                    let right = radius * 1.5;
+                    let bestPoint = { ...point };
+
+                    for (let iter = 0; iter < 10; iter++) {
+                        const midRadius = (left + right) / 2;
+                        const midLatOffset = (midRadius / 111000) * Math.sin(point.angle);
+                        const midLngOffset = (midRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(point.angle);
+
+                        const testPoint = {
+                            lng: lng + midLngOffset,
+                            lat: lat + midLatOffset
+                        };
+
+                        const duration = await getWalkingDuration(origin, testPoint);
+
+                        if (duration <= maxTime) {
+                            bestPoint = { ...testPoint };
+                            left = midRadius;
+                        } else {
+                            right = midRadius;
+                        }
+                    }
+
+                    boundaryPoints.push([bestPoint.lng, bestPoint.lat]);
+                } catch (error) {
+                    console.log(`方向 ${i} 查询失败:`, error);
+                    // 使用估算值作为备用
+                    boundaryPoints.push([point.lng, point.lat]);
+                }
+            }
+
+            boundaryPoints.push(boundaryPoints[0]); // 闭合多边形
 
             // 创建多边形覆盖物
             polygon = new AMap.Polygon({
-                path: points,
+                path: boundaryPoints,
                 strokeColor: '#1890ff',
                 strokeWeight: 2,
                 strokeOpacity: 0.8,
