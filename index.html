@@ -149,7 +149,7 @@
         <h2>🚶 步行可达范围查询</h2>
 
         <div class="form-group">
-            <label>中心点经度</label>
+            <label>中心点经度</</label>
             <input type="number" id="lng" placeholder="例如: 106.554" step="0.000001" value="106.554">
         </div>
 
@@ -164,14 +164,14 @@
         </div>
 
         <div class="form-group">
-            <label>采样精度</label>
-            <select id="precision">
-                <option value="8">快速（8方向，约10秒）</option>
-                <option value="12" selected>平衡（12方向，约15秒）</option>
-                <option value="16">高精度（16方向，约20秒）</option>
-                <option value="24">超高精度（24方向，约30秒）</option>
+            <label>网格大小（米）</label>
+            <select id="gridSize">
+                <option value="200">200米（快速）</option>
+                <option value="150" selected>150米（平衡）</option>
+                <option value="100">100米（精确）</option>
+                <option value="50">50米（超精确）</option>
             </select>
-            <small>方向数越多，可达范围越准确，但查询时间更长</small>
+            <small>网格越小结果越精确，但查询时间更长</small>
         </div>
 
         <div class="btn-group">
@@ -256,7 +256,7 @@
             const lng = document.getElementById('lng').value;
             const lat = document.getElementById('lat').value;
             const time = document.getElementById('time').value;
-            const precision = document.getElementById('precision').value;
+            const gridSize = document.getElementById('gridSize').value;
 
             if (!lng || !lat || !time) {
                 showResult('请填写完整信息', true);
@@ -274,9 +274,8 @@
             // 清除旧标记
             clearMarkers();
 
-            // 高德地图使用服务区域分析API
-            // 由于高德Web API的限制，这里使用周边多边形估算
-            calculateAccessibleArea(parseFloat(lng), parseFloat(lat), parseInt(time), parseInt(precision));
+            // 使用网格搜索算法
+            calculateAccessibleAreaWithGrid(parseFloat(lng), parseFloat(lat), parseInt(time), parseInt(gridSize));
         }
 
         // 清除地图上的标记
@@ -341,138 +340,105 @@
             });
         }
 
-        // 计算可达范围（向内搜索算法，解决非道路中心点问题）
-        async function calculateAccessibleArea(lng, lat, timeMinutes, precision) {
+        // 网格搜索算法：按网格搜索最外围可达点
+        async function calculateAccessibleAreaWithGrid(lng, lat, timeMinutes, gridSize) {
             const maxTime = timeMinutes * 60; // 转换为秒
+            const walkingSpeed = 83.3; // 步行速度（米/分钟）
+            const estimatedRadius = walkingSpeed * timeMinutes; // 估算半径
 
-            // 估算最大可达半径（步行速度约83.3米/分钟）
-            const estimatedRadius = 83.3 * timeMinutes;
-            const maxRadius = estimatedRadius * 2; // 最大搜索范围（2倍估算值）
-            const minRadius = estimatedRadius * 0.1; // 最小搜索范围
+            // 搜索范围：估算半径的1.2倍
+            const searchRadius = estimatedRadius * 1.2;
 
-            // 根据精度选择方向数和迭代次数
-            const segments = precision; // 方向数
-            const maxIterations = Math.ceil(15 - (precision / 4)); // 精度越高，迭代次数越多
+            // 生成网格点
+            const gridPoints = [];
+            const gridCells = Math.ceil(searchRadius / gridSize); // 网格层数
 
-            // 生成各个方向
-            const directions = [];
-            for (let i = 0; i < segments; i++) {
-                const angle = (i / segments) * 360 * (Math.PI / 180);
-                directions.push(angle);
+            for (let ring = 1; ring <= gridCells; ring++) {
+                const currentRadius = ring * gridSize;
+                const circumference = 2 * Math.PI * currentRadius;
+                const numPoints = Math.max(6, Math.floor(circumference / gridSize)); // 每层的点数
+
+                for (let i = 0; i < numPoints; i++) {
+                    const angle = (i / numPoints) * 360 * (Math.PI / 180);
+                    const point = {
+                        lng: lng + (currentRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
+                        lat: lat + (currentRadius / 111000) * Math.sin(angle),
+                        distance: currentRadius,
+                        angle: angle,
+                        ring: ring
+                    };
+                    gridPoints.push(point);
+                }
             }
 
-            // 查询每个方向上最外围的可达点（向内搜索）
+            // 按距离从远到近排序
+            gridPoints.sort((a, b) => b.distance - a.distance);
+
+            // 搜索最外围可达点
             const boundaryPoints = [];
             const origin = { lng, lat };
+            const visited = new Set();
             let successCount = 0;
             let failCount = 0;
 
-            for (let i = 0; i < directions.length; i++) {
-                const angle = directions[i];
+            for (const point of gridPoints) {
+                const key = `${point.ring}_${Math.floor(point.angle * 100)}`;
+                if (visited.has(key)) continue;
+                visited.add(key);
 
                 try {
-                    // 从最大半径开始向内搜索边界点
-                    let left = minRadius;
-                    let right = maxRadius;
-                    let bestPoint = null;
+                    const duration = await getWalkingDuration(origin, point);
 
-                    // 首先检查最大半径是否可达
-                    try {
-                        const maxPoint = {
-                            lng: lng + (maxRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                            lat: lat + (maxRadius / 111000) * Math.sin(angle)
-                        };
-                        const maxDuration = await getWalkingDuration(origin, maxPoint);
-
-                        if (maxDuration <= maxTime) {
-                            // 如果最大半径仍可达，尝试更大的半径
-                            right = maxRadius * 1.5;
-                        }
-                    } catch (e) {
-                        // 如果最大半径查询失败，使用较小的范围
-                        right = maxRadius * 0.8;
-                    }
-
-                    // 二分查找边界点（向内搜索）
-                    for (let iter = 0; iter < maxIterations; iter++) {
-                        const testRadius = (left + right) / 2;
-
-                        const testPoint = {
-                            lng: lng + (testRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                            lat: lat + (testRadius / 111000) * Math.sin(angle)
-                        };
-
-                        try {
-                            const duration = await getWalkingDuration(origin, testPoint);
-
-                            if (duration <= maxTime) {
-                                // 可达，继续向外找
-                                bestPoint = { ...testPoint };
-                                left = testRadius;
-                            } else {
-                                // 超时，向内找
-                                right = testRadius;
-                            }
-                        } catch (e) {
-                            // 查询失败，视为不可达，向内找
-                            right = testRadius;
-                        }
-                    }
-
-                    if (bestPoint) {
-                        boundaryPoints.push([bestPoint.lng, bestPoint.lat]);
+                    if (duration <= maxTime) {
+                        // 可达，添加到边界点
+                        boundaryPoints.push({
+                            lng: point.lng,
+                            lat: point.lat,
+                            angle: point.angle
+                        });
                         successCount++;
-                    } else {
-                        // 如果没找到边界点，使用估算值
-                        const fallbackRadius = estimatedRadius;
-                        const fallbackPoint = {
-                            lng: lng + (fallbackRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                            lat: lat + (fallbackRadius / 111000) * Math.sin(angle)
-                        };
-                        boundaryPoints.push([fallbackPoint.lng, fallbackPoint.lat]);
-                        failCount++;
                     }
                 } catch (error) {
-                    console.log(`方向 ${i} 查询失败:`, error);
-                    // 使用估算值作为备用
-                    const fallbackRadius = estimatedRadius;
-                    const fallbackPoint = {
-                        lng: lng + (fallbackRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                        lat: lat + (fallbackRadius / 111000) * Math.sin(angle)
-                    };
-                    boundaryPoints.push([fallbackPoint.lng, fallbackPoint.lat]);
+                    console.log('查询失败:', error);
                     failCount++;
                 }
             }
 
-            if (boundaryPoints.length > 0) {
-                boundaryPoints.push(boundaryPoints[0]); // 闭合多边形
-
-                // 创建多边形覆盖物
-                polygon = new AMap.Polygon({
-                    path: boundaryPoints,
-                    strokeColor: '#1890ff',
-                    strokeWeight: 2,
-                    strokeOpacity: 0.8,
-                    fillColor: '#1890ff',
-                    fillOpacity: 0.2
-                });
-
-                map.add(polygon);
-                map.setFitView([polygon]);
-
-                // 添加中心点标记
-                const centerMarker = new AMap.Marker({
-                    position: [lng, lat],
-                    map: map
-                });
-                markers.push(centerMarker);
-
-                const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(estimatedRadius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（成功查询 ${successCount} 个方向，失败 ${failCount} 个）<br>算法：向内搜索（更准确）`, false);
-            } else {
-                showResult('❌ 查询失败，请稍后重试', true);
+            // 如果没有找到可达点，返回估算值
+            if (boundaryPoints.length === 0) {
+                showResult('❌ 未找到可达点，请检查网络或扩大搜索范围', true);
+                return;
             }
+
+            // 按角度排序边界点
+            boundaryPoints.sort((a, b) => a.angle - b.angle);
+
+            // 转换为坐标数组
+            const polygonPath = boundaryPoints.map(p => [p.lng, p.lat]);
+            polygonPath.push(polygonPath[0]); // 闭合
+
+            // 创建多边形覆盖物
+            polygon = new AMap.Polygon({
+                path: polygonPath,
+                strokeColor: '#1890ff',
+                strokeWeight: 2,
+                strokeOpacity: 0.8,
+                fillColor: '#1890ff',
+                fillOpacity: 0.2
+            });
+
+            map.add(polygon);
+            map.setFitView([polygon]);
+
+            // 添加中心点标记
+            const centerMarker = new AMap.Marker({
+                position: [lng, lat],
+                map: map
+            });
+            markers.push(centerMarker);
+
+            const area = Math.PI * (estimatedRadius * estimatedRadius);
+            showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(estimatedRadius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>找到 ${successCount} 个边界点<br>算法：网格搜索（精确）`, false);
         }
 
         // 显示结果
@@ -490,3 +456,4 @@
     </script>
 </body>
 </html>
+>
