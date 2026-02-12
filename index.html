@@ -16,6 +16,7 @@
         .form-group small { display: block; margin-top: 5px; font-size: 12px; color: #999; }
         .btn { width: 100%; padding: 12px; background: #1890ff; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
         .btn:hover { background: #40a9ff; }
+        .btn:disabled { background: #d9d9d9; cursor: not-allowed; }
         .btn-secondary { background: #8c8c8c; }
         .btn-secondary:hover { background: #a8a8a8; }
         .btn-group { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -23,7 +24,7 @@
         .checkbox-group { display: flex; align-items: center; margin-bottom: 15px; }
         .checkbox-group label { margin-left: 8px; font-size: 13px; color: #666; cursor: pointer; }
         .checkbox-group input[type="checkbox"] { width: auto; margin: 0; }
-        .hint { margin-top: 10px; font-size: 12px; color: #999; line-height: 1.5; }
+        .hint { margin-top: 10px; font-size: 12px; color: #999; line-heightaring: 1.5; }
         .result { margin-top: 20px; padding: 10px; background: #f0f9ff; border-radius: 4px; font-size: 13px; color: #0066cc; display: none; }
         .result.show { display: block; }
         .error { background: #fff2f0; color: #ff4d4f; }
@@ -39,19 +40,19 @@
         <div class="form-group"><label>Grid Size (m)</label><select id="gridSize"><option value="200">200m (Fast)</option><option value="150" selected>150m (Balanced)</option><option value="100">100m (Precise)</option><option value="50">50m (Ultra Precise)</option></select><small>Smaller grid = more precise but slower</small></div>
         <div class="checkbox-group"><input type="checkbox" id="showDebugPoints"><label for="showDebugPoints">Show debug points (Yellow=all, Red=boundary)</label></div>
         <div class="btn-group"><button class="btn" id="searchBtn" onclick="search()">Search</button><button class="btn btn-secondary" onclick="clearMap()">Clear</button></div>
-        <div class="hint">Click map to set center<br>Hold Shift+Click to measure distance<br>Requires Amap Web API key</div>
+        <div class="hint">Click map to set center<br>Requires Amap Web API key</div>
         <div class="result" id="result"></div>
     </div>
     <div id="container"></div>
     <script>
         const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
         const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
-        let map = null, driving = null, polygon = null, markers = [], debugMarkers = [], ruler = null;
+        let map = null, driving = null, polygon = null, markers = [], debugMarkers = [];
         function loadScript() {
             return new Promise(function(resolve, reject) {
                 const script = document.createElement('script');
                 script.type = 'text/javascript';
-                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving,AMap.RulerTool';
+                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving';
                 script.onload = resolve;
                 script.onerror = reject;
                 document.head.appendChild(script);
@@ -61,19 +62,14 @@
             try {
                 await loadScript();
                 map = new AMap.Map('container', { zoom: 12, center: [106.554, 29.563], viewMode: '2D', mapStyle: 'amap://styles/normal' });
-                ruler = new AMap.RulerTool(map, { rulerStyle: { strokeColor: '#1890ff', lineWidth: 2 }, showLabel: true, limitMarkers: 10 });
                 map.on('click', function(e) {
-                    if (e.originalEvent && e.originalEvent.shiftKey) {
-                        ruler.turnOn();
-                        return;
-                    }
                     document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
                     document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
                     clearMarkers();
                     const marker = new AMap.Marker({ position: [e.lnglat.getLng(), e.lnglat.getLat()], map: map });
                     markers.push(marker);
                 });
-                showResult('Map loaded! Hold Shift+Click to measure', false);
+                showResult('Map loaded!', false);
             } catch (error) {
                 showResult('Map failed: ' + error.message, true);
             }
@@ -107,10 +103,6 @@
                 polygon = null;
             }
             clearMarkers();
-            if (ruler) {
-                ruler.turnOff();
-                ruler.clear();
-            }
             document.getElementById('lng').value = '';
             document.getElementById('lat').value = '';
             showResult('Cleared', false);
