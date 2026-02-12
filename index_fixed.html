@@ -15,7 +15,7 @@
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #1890ff; }
         .form-group small { display: block; margin-top: 5px; font-size: 12px; color: #999; }
         .btn { width: 100%; padding: 12px; background: #1890ff; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; transition: background 0.3s; }
-        .btn:hover { background: #40a9ff; }
+        .btn:hover { background: #4040a9ff; }
         .btn:disabled { background: #d9d9d9; cursor: not-allowed; }
         .btn-secondary { background: #8c8c8c; }
         .btn-secondary:hover { background: #a8a8a8; }
@@ -49,7 +49,7 @@
         const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
         let map = null, driving = null, polygon = null, markers = [], debugMarkers = [], ruler = null;
         function loadScript() {
-            return new Promise(function(resolve, reject) {
+            return new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.type = 'text/javascript';
                 script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving,AMap.RulerTool';
@@ -62,12 +62,9 @@
             try {
                 await loadScript();
                 map = new AMap.Map('container', { zoom: 12, center: [106.554, 29.563], viewMode: '2D', mapStyle: 'amap://styles/normal' });
-                ruler = new AMap.RulerTool(map, { rulerStyle: { strokeColor: '#1890ff', lineWidth: 2 }, showLabel: true, limitMarkers: 10 });
+                ruler = new AMap.RulerTool(map, { rulerStyle: { strokeColor: '#1890ff', lineWidth: 2 }, showLabel: true, limit:Markers: 10 });
                 map.on('click', function(e) {
-                    if (e.originalEvent && e.originalEvent.shiftKey) {
-                        ruler.turnOn();
-                        return;
-                    }
+                    if (e.originalEvent && e.originalEvent.shiftKey) { ruler.turnOn(); return; }
                     document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
                     document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
                     clearMarkers();
@@ -84,48 +81,34 @@
             const lat = document.getElementById('lat').value;
             const time = document.getElementById('time').value;
             const gridSize = document.getElementById('gridSize').value;
-            if (!lng || !lat || !time) {
-                showResult('请填写完整信息', true);
-                return;
-            }
+            if (!lng || !lat || !time) { showResult('请填写完整信息', true); return; }
             showResult('正在查询...', false);
-            if (polygon) {
-                map.remove(polygon);
-                polygon = null;
-            }
+            if (polygon) { map.remove(polygon); polygon = null; }
             clearMarkers();
             calculateAccessibleAreaWithGrid(parseFloat(lng), parseFloat(lat), parseInt(time), parseInt(gridSize));
         }
         function clearMarkers() {
-            markers.forEach(function(marker) { map.remove(marker); });
+            markers.forEach(marker => map.remove(marker));
             markers = [];
-            debugMarkers.forEach(function(marker) { map.remove(marker); });
+            debugMarkers.forEach(marker => map.remove(marker));
             debugMarkers = [];
         }
         function clearMap() {
-            if (polygon) {
-                map.remove(polygon);
-                polygon = null;
-            }
+            if (polygon) { map.remove(polygon); polygon = null; }
             clearMarkers();
-            if (ruler) {
-                ruler.turnOff();
-                ruler.clear();
-            }
+            if (ruler) { ruler.turnOff(); ruler.clear(); }
             document.getElementById('lng').value = '';
             document.getElementById('lat').value = '';
             showResult('已清除所有标记和覆盖物', false);
         }
         function getWalkingDuration(origin, destination) {
-            return new Promise(function(resolve, reject) {
+            return new Promise((resolve, reject) => {
                 const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 const url = 'https://restapi.amap.com/v3/direction/walking?key=' + AMAP_WEB_KEY + '&origin=' + origin.lng + ',' + origin.lat + '&destination=' + destination.lng + ',' + destination.lat + '&output=json&callback=' + callbackName;
                 window[callbackName] = function(data) {
                     delete window[callbackName];
                     const script = document.getElementById(callbackName);
-                    if (script) {
-                        document.head.removeChild(script);
-                    }
+                    if (script) document.head.removeChild(script);
                     if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
                         resolve(data.route.paths[0].duration);
                     } else {
@@ -149,10 +132,9 @@
             const anglePerDirection = (2 * Math.PI) / numDirections;
             const farthestPoints = new Map();
             const gridCells = Math.ceil(searchRadius / gridSize);
-            const origin = { lng: lng, lat: lat };
+            const origin = { lng, lat };
             let totalChecked = 0, successCount = 0, failCount = 0;
             const showDebug = document.getElementById('showDebugPoints').checked;
-            console.log('开始搜索，搜索半径:', searchRadius, '网格层数:', gridCells);
             for (let ring = gridCells; ring >= 1; ring--) {
                 const currentRadius = ring * gridSize;
                 const circumference = 2 * Math.PI * currentRadius;
@@ -193,9 +175,7 @@
                     }
                 }
             }
-            console.log('搜索完成，找到可达点:', successCount, '总查询:', totalChecked, '失败:', failCount);
             if (farthestPoints.size < numDirections * 0.5) {
-                console.log('可达点太少，使用备用方案');
                 const fallbackPoints = [];
                 for (let i = 0; i < numDirections; i++) {
                     const angle = (i / numDirections) * 360 * (Math.PI / 180);
@@ -207,9 +187,9 @@
                     });
                 }
                 const boundaryPoints = fallbackPoints;
-                boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
+                boundaryPoints.sort((a, b) => a.angle - b.angle);
                 if (showDebug) {
-                    boundaryPoints.forEach(function(p) {
+                    boundaryPoints.forEach(p => {
                         const debugMarker = new AMap.CircleMarker({
                             center: [p.lng, p.lat],
                             radius: 8,
@@ -222,7 +202,7 @@
                         debugMarkers.push(debugMarker);
                     });
                 }
-                const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+                const polygonPath = boundaryPoints.map(p => [p.lng, p.lat]);
                 polygonPath.push(polygonPath[0]);
                 polygon = new AMap.Polygon({
                     path: polygonPath,
@@ -237,13 +217,13 @@
                 const centerMarker = new AMap.Marker({ position: [lng, lat], map: map });
                 markers.push(centerMarker);
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult('⚠️ 网格查询结果不足，使用估算值<br>步行 ' + timeMinutes + ' 分钟约 ' + estimatedRadius.toFixed(0) + ' 米<br>覆盖面积约 ' + (area / 1000000).toFixed(2) + ' '平方公里<br>（查询 ' + totalChecked + ' 个点，' + failCount + ' 次失败）', false);
+                showResult('⚠️ 网格查询结果不足，使用估算值<br>步行 ' + timeMinutes + ' 分钟约 ' + estimatedRadius.toFixed(0) + ' 米<br>覆盖面积约 ' + (area / 1000000).toFixed(2) + ' 平方公里<br>（查询 ' + totalChecked + ' 个点，' + failCount + ' 次失败）', false);
                 return;
             }
             const boundaryPoints = Array.from(farthestPoints.values());
-            boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
+            boundaryPoints.sort((a, b) => a.angle - b.angle);
             if (showDebug) {
-                boundaryPoints.forEach(function(p) {
+                boundaryPoints.forEach(p => {
                     const debugMarker = new AMap.CircleMarker({
                         center: [p.lng, p.lat],
                         radius: 8,
@@ -256,7 +236,7 @@
                     debugMarkers.push(debugMarker);
                 });
             }
-            const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+            const polygonPath = boundaryPoints.map(p => [p.lng, p.lat]);
             polygonPath.push(polygonPath[0]);
             polygon = new AMap.Polygon({
                 path: polygonPath,
@@ -277,9 +257,8 @@
             const resultEl = document.getElementById('result');
             resultEl.innerHTML = message;
             resultEl.className = 'result show';
-            if (isError) {
-                resultEl.classList.add('error');
-            }
+            if (isError) resultEl.classList.add('error');
+');
         }
         window.onload = init;
     </script>
