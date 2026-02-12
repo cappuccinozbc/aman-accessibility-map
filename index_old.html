@@ -341,106 +341,83 @@
             });
         }
 
-        // 计算可达范围（向内搜索算法，解决非道路中心点问题）
+        // 计算可达范围（使用真实步行时间）
         async function calculateAccessibleArea(lng, lat, timeMinutes, precision) {
             const maxTime = timeMinutes * 60; // 转换为秒
-
-            // 估算最大可达半径（步行速度约83.3米/分钟）
-            const estimatedRadius = 83.3 * timeMinutes;
-            const maxRadius = estimatedRadius * 2; // 最大搜索范围（2倍估算值）
-            const minRadius = estimatedRadius * 0.1; // 最小搜索范围
+            const radius = Math.max(500, 83.3 * timeMinutes); // 估算初始半径（米）
 
             // 根据精度选择方向数和迭代次数
             const segments = precision; // 方向数
-            const maxIterations = Math.ceil(15 - (precision / 4)); // 精度越高，迭代次数越多
+            const maxIterations = Math.ceil(12 - (precision / 3)); // 精度越高，迭代次数越多
 
-            // 生成各个方向
-            const directions = [];
+            // 生成候选点
+            const candidatePoints = [];
             for (let i = 0; i < segments; i++) {
                 const angle = (i / segments) * 360 * (Math.PI / 180);
-                directions.push(angle);
+                const latOffset = (radius / 111000) * Math.sin(angle);
+                const lngOffset = (radius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle);
+
+                candidatePoints.push({
+                    lng: lng + lngOffset,
+                    lat: lat + latOffset,
+                    angle: angle
+                });
             }
 
-            // 查询每个方向上最外围的可达点（向内搜索）
+            // 查询每个方向上步行时间正好等于maxTime的点（二分查找）
             const boundaryPoints = [];
             const origin = { lng, lat };
             let successCount = 0;
             let failCount = 0;
 
-            for (let i = 0; i < directions.length; i++) {
-                const angle = directions[i];
+            for (let i = 0; i < candidatePoints.length; i++) {
+                const point = candidatePoints[i];
 
                 try {
-                    // 从最大半径开始向内搜索边界点
-                    let left = minRadius;
-                    let right = maxRadius;
-                    let bestPoint = null;
+                    // 二分查找边界点
+                    let left = 0;
+                    let right = radius * 1.8; // 扩大搜索范围
+                    let bestPoint = { ...point };
 
-                    // 首先检查最大半径是否可达
+                    // 检查最大半径是否可达
                     try {
-                        const maxPoint = {
-                            lng: lng + (maxRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                            lat: lat + (maxRadius / 111000) * Math.sin(angle)
-                        };
-                        const maxDuration = await getWalkingDuration(origin, maxPoint);
-
-                        if (maxDuration <= maxTime) {
-                            // 如果最大半径仍可达，尝试更大的半径
-                            right = maxRadius * 1.5;
+                        const maxDuration = await getWalkingDuration(origin, {
+                            lng: point.lng,
+                            lat: point.lat
+                        });
+                        if (maxDuration > maxTime) {
+                            right = radius * 1.2;
                         }
                     } catch (e) {
-                        // 如果最大半径查询失败，使用较小的范围
-                        right = maxRadius * 0.8;
+                        // 如果边界检查失败，使用默认范围
                     }
 
-                    // 二分查找边界点（向内搜索）
                     for (let iter = 0; iter < maxIterations; iter++) {
-                        const testRadius = (left + right) / 2;
+                        const midRadius = (left + right) / 2;
+                        const midLatOffset = (midRadius / 111000) * Math.sin(point.angle);
+                        const midLngOffset = (midRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(point.angle);
 
                         const testPoint = {
-                            lng: lng + (testRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                            lat: lat + (testRadius / 111000) * Math.sin(angle)
+                            lng: lng + midLngOffset,
+                            lat: lat + midLatOffset
                         };
 
-                        try {
-                            const duration = await getWalkingDuration(origin, testPoint);
+                        const duration = await getWalkingDuration(origin, testPoint);
 
-                            if (duration <= maxTime) {
-                                // 可达，继续向外找
-                                bestPoint = { ...testPoint };
-                                left = testRadius;
-                            } else {
-                                // 超时，向内找
-                                right = testRadius;
-                            }
-                        } catch (e) {
-                            // 查询失败，视为不可达，向内找
-                            right = testRadius;
+                        if (duration <= maxTime) {
+                            bestPoint = { ...testPoint };
+                            left = midRadius;
+                        } else {
+                            right = midRadius;
                         }
                     }
 
-                    if (bestPoint) {
-                        boundaryPoints.push([bestPoint.lng, bestPoint.lat]);
-                        successCount++;
-                    } else {
-                        // 如果没找到边界点，使用估算值
-                        const fallbackRadius = estimatedRadius;
-                        const fallbackPoint = {
-                            lng: lng + (fallbackRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                            lat: lat + (fallbackRadius / 111000) * Math.sin(angle)
-                        };
-                        boundaryPoints.push([fallbackPoint.lng, fallbackPoint.lat]);
-                        failCount++;
-                    }
+                    boundaryPoints.push([bestPoint.lng, bestPoint.lat]);
+                    successCount++;
                 } catch (error) {
                     console.log(`方向 ${i} 查询失败:`, error);
                     // 使用估算值作为备用
-                    const fallbackRadius = estimatedRadius;
-                    const fallbackPoint = {
-                        lng: lng + (fallbackRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                        lat: lat + (fallbackRadius / 111000) * Math.sin(angle)
-                    };
-                    boundaryPoints.push([fallbackPoint.lng, fallbackPoint.lat]);
+                    boundaryPoints.push([point.lng, point.lat]);
                     failCount++;
                 }
             }
@@ -468,8 +445,8 @@
                 });
                 markers.push(centerMarker);
 
-                const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(estimatedRadius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（成功查询 ${successCount} 个方向，失败 ${failCount} 个）<br>算法：向内搜索（更准确）`, false);
+                const area = Math.PI * (radius * radius);
+                showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(radius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（成功查询 ${successCount} 个方向，失败 ${failCount} 个）`, false);
             } else {
                 showResult('❌ 查询失败，请稍后重试', true);
             }
