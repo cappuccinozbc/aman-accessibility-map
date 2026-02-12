@@ -90,6 +90,25 @@
             cursor: not-allowed;
         }
 
+        .btn-secondary {
+            background: #8c8c8c;
+        }
+
+        .btn-secondary:hover {
+            background: #a8a8a8;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn-group .btn,
+        .btn-group .btn-secondary {
+            flex: 1;
+        }
+
         .hint {
             margin-top: 10px;
             font-size: 12px;
@@ -131,12 +150,12 @@
 
         <div class="form-group">
             <label>中心点经度</label>
-            <input type="number" id="lng" placeholder="例如: 116.397428" step="0.000001">
+            <input type="number" id="lng" placeholder="例如: 106.554" step="0.000001" value="106.554">
         </div>
 
         <div class="form-group">
             <label>中心点纬度</label>
-            <input type="number" id="lat" placeholder="例如: 39.90923" step="0.000001">
+            <input type="number" id="lat" placeholder="例如: 29.563" step="0.000001" value="29.563">
         </div>
 
         <div class="form-group">
@@ -155,7 +174,10 @@
             <small>方向数越多，可达范围越准确，但查询时间更长</small>
         </div>
 
-        <button class="btn" id="searchBtn" onclick="search()">🔍 查询可达范围</button>
+        <div class="btn-group">
+            <button class="btn" id="searchBtn" onclick="search()">🔍 查询</button>
+            <button class="btn btn-secondary" onclick="clearMap()">🧹 清除</button>
+        </div>
 
         <div class="hint">
             💡 提示：点击地图可选择中心点<br>
@@ -175,6 +197,7 @@
         let map = null;
         let driving = null;
         let polygon = null;
+        let markers = []; // 存储所有标记
 
         // 加载高德地图API
         function loadScript() {
@@ -196,7 +219,7 @@
                 // 创建地图实例
                 map = new AMap.Map('container', {
                     zoom: 12,
-                    center: [116.397428, 39.90923],
+                    center: [106.554, 29.563], // 重庆市
                     viewMode: '2D',
                     mapStyle: 'amap://styles/normal'
                 });
@@ -211,11 +234,15 @@
                     document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
                     document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
 
-                    // 添加标记
-                    new AMap.Marker({
+                    // 清除旧标记
+                    clearMarkers();
+
+                    // 添加新标记
+                    const marker = new AMap.Marker({
                         position: [e.lnglat.getLng(), e.lnglat.getLat()],
                         map: map
                     });
+                    markers.push(marker);
                 });
 
                 showResult('地图加载成功！', false);
@@ -244,9 +271,38 @@
                 polygon = null;
             }
 
+            // 清除旧标记
+            clearMarkers();
+
             // 高德地图使用服务区域分析API
             // 由于高德Web API的限制，这里使用周边多边形估算
             calculateAccessibleArea(parseFloat(lng), parseFloat(lat), parseInt(time), parseInt(precision));
+        }
+
+        // 清除地图上的标记
+        function clearMarkers() {
+            markers.forEach(marker => {
+                map.remove(marker);
+            });
+            markers = [];
+        }
+
+        // 清除所有内容
+        function clearMap() {
+            // 清除多边形
+            if (polygon) {
+                map.remove(polygon);
+                polygon = null;
+            }
+
+            // 清除标记
+            clearMarkers();
+
+            // 清空输入框
+            document.getElementById('lng').value = '';
+            document.getElementById('lat').value = '';
+
+            showResult('已清除所有标记和覆盖物', false);
         }
 
         // 计算步行时间（使用高德Web服务API - 通过JSONP方式调用）
@@ -383,10 +439,11 @@
                 map.setFitView([polygon]);
 
                 // 添加中心点标记
-                new AMap.Marker({
+                const centerMarker = new AMap.Marker({
                     position: [lng, lat],
                     map: map
                 });
+                markers.push(centerMarker);
 
                 const area = Math.PI * (radius * radius);
                 showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(radius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（成功查询 ${successCount} 个方向，失败 ${failCount} 个）`, false);
