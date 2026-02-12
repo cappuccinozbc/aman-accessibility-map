@@ -227,26 +227,39 @@
             calculateAccessibleArea(parseFloat(lng), parseFloat(lat), parseInt(time));
         }
 
-        // 计算步行时间（使用高德Web服务API）
+        // 计算步行时间（使用高德Web服务API - 通过JSONP方式调用）
         function getWalkingDuration(origin, destination) {
             return new Promise((resolve, reject) => {
-                const url = `https://restapi.amap.com/v3/direction/walking?key=${AMAP_WEB_KEY}&origin=${origin.lng},${origin.lat}&destination=${destination.lng},${destination.lat}`;
+                // 使用JSONP方式调用，避免CORS问题
+                const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                const url = `https://restapi.amap.com/v3/direction/walking?key=${AMAP_WEB_KEY}&origin=${origin.lng},${origin.lat}&destination=${destination.lng},${destination.lat}&output=json&callback=${callbackName}`;
 
-                fetch(url)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
-                            // 步行时间（秒）
-                            resolve(data.route.paths[0].steps.reduce((total, step) => total + step.duration, 0));
-                        } else {
-                            console.log('API返回错误:', data);
-                            reject(data.info || '查询失败');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('API调用失败:', error);
-                        reject(error);
-                    });
+                // 创建全局回调函数
+                window[callbackName] = function(data) {
+                    delete window[callbackName];
+                    const script = document.getElementById(callbackName);
+                    if (script) {
+                        document.head.removeChild(script);
+                    }
+
+                    if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
+                        // 步行时间（秒）
+                        resolve(data.route.paths[0].steps.reduce((total, step) => total + step.duration, 0));
+                    } else {
+                        console.log('API返回错误:', data);
+                        reject(data.info || '查询失败');
+                    }
+                };
+
+                // 创建script标签发送请求
+                const script = document.createElement('script');
+                script.id = callbackName;
+                script.src = url;
+                script.onerror = function() {
+                    delete window[callbackName];
+                    reject('网络错误');
+                };
+                document.head.appendChild(script);
             });
         }
 
@@ -274,8 +287,14 @@
             // 查询每个方向上步行时间正好等于maxTime的点（二分查找）
             const boundaryPoints = [];
             const origin = { lng, lat };
+            let successCount = 0;
+            let failCount = 0;
 
-            for (let i = 0; i < candidatePoints.length; i++) {
+            // 为了避免大量API请求，只用8个方向采样
+            const sampleSize = 8;
+            const step = Math.floor(segments / sampleSize);
+
+            for (let i = 0; i < segments; i += step) {
                 const point = candidatePoints[i];
 
                 try {
@@ -284,7 +303,7 @@
                     let right = radius * 1.5;
                     let bestPoint = { ...point };
 
-                    for (let iter = 0; iter < 10; iter++) {
+                    for (let iter = 0; iter < 8; iter++) {
                         const midRadius = (left + right) / 2;
                         const midLatOffset = (midRadius / 111000) * Math.sin(point.angle);
                         const midLngOffset = (midRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(point.angle);
@@ -305,36 +324,42 @@
                     }
 
                     boundaryPoints.push([bestPoint.lng, bestPoint.lat]);
+                    successCount++;
                 } catch (error) {
                     console.log(`方向 ${i} 查询失败:`, error);
                     // 使用估算值作为备用
                     boundaryPoints.push([point.lng, point.lat]);
+                    failCount++;
                 }
             }
 
-            boundaryPoints.push(boundaryPoints[0]); // 闭合多边形
+            if (boundaryPoints.length > 0) {
+                boundaryPoints.push(boundaryPoints[0]); // 闭合多边形
 
-            // 创建多边形覆盖物
-            polygon = new AMap.Polygon({
-                path: boundaryPoints,
-                strokeColor: '#1890ff',
-                strokeWeight: 2,
-                strokeOpacity: 0.8,
-                fillColor: '#1890ff',
-                fillOpacity: 0.2
-            });
+                // 创建多边形覆盖物
+                polygon = new AMap.Polygon({
+                    path: boundaryPoints,
+                    strokeColor: '#1890ff',
+                    strokeWeight: 2,
+                    strokeOpacity: 0.8,
+                    fillColor: '#1890ff',
+                    fillOpacity: 0.2
+                });
 
-            map.add(polygon);
-            map.setFitView([polygon]);
+                map.add(polygon);
+                map.setFitView([polygon]);
 
-            // 添加中心点标记
-            new AMap.Marker({
-                position: [lng, lat],
-                map: map
-            });
+                // 添加中心点标记
+                new AMap.Marker({
+                    position: [lng, lat],
+                    map: map
+                });
 
-            const area = Math.PI * (radius * radius);
-            showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(radius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里`, false);
+                const area = Math.PI * (radius * radius);
+                showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(radius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（成功查询 ${successCount} 个方向，失败 ${failCount} 个）`, false);
+            } else {
+                showResult('❌ 查询失败，请稍后重试', true);
+            }
         }
 
         // 显示结果
