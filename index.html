@@ -194,7 +194,7 @@
 
         <div class="checkbox-group">
             <input type="checkbox" id="showDebugPoints">
-            <label for="showDebugPoints">显示搜索点（🟡黄色=查询点，🔴红色=边界点）</label>
+            <label for="showDebugPoints">显示搜索点（黄色=查询点，红色=边界点）</label>
         </div>
 
         <div class="btn-group">
@@ -281,7 +281,7 @@
                     markers.push(marker);
                 });
 
-                showResult(''地图加载成功！<br>💡 按住Shift+点击可开启量距工具', false);
+                showResult('地图加载成功！<br>💡 按住Shift+点击可开启量距工具', false);
             } catch (error) {
                 showResult('地图加载失败：' + error.message, true);
             }
@@ -347,7 +347,7 @@
 
             // 清空输入框
             document.getElementById('lng').value = '';
-            document.getElementById('lat').value = '';
+                       document.getElementById('lat').value = '';
 
             showResult('已清除所有标记和覆盖物', false);
         }
@@ -530,7 +530,7 @@
                 markers.push(centerMarker);
 
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult(`⚠️ 网格查询结果不足，使用估算值<br>步行 ${timeMinutes} 分钟约 ${(estimatedRadius).toFixed(0)} 米<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>（查询 ${totalChecked} 个点，${failCount} 次失败）`, false);
+                showResult('⚠️ 网格查询结果不足，使用估算值<br>步行 ' + timeMinutes + ' 分钟约 ' + estimatedRadius.toFixed(0) + ' 米<br>覆盖面积约 ' + (area / 1000000).toFixed(2) + ' 平方公里<br>（查询 ' + totalChecked + ' 个点，' + failCount + ' 次失败）', false);
                 return;
             }
 
@@ -579,7 +579,7 @@
             markers.push(centerMarker);
 
             const area = Math.PI * (estimatedRadius * estimatedRadius);
-            showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(estimatedRadius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>找到 ${successCount} 个边界点（查询 ${totalChecked} 个点）<br>算法：网格搜索（精确）`, false);
+            showResult('✅ 查询成功！<br>步行 ' + timeMinutes + ' 分钟可到达约 ' + estimatedRadius.toFixed(0) + ' 米范围内<br>覆盖面积约 ' + (area / 1000000).toFixed(2) + ' 平方公里<br>找到 ' + successCount + ' 个边界点（查询 ' + totalChecked + ' 个点）<br>算法：网格搜索（精确）', false);
         }
 
         // 显示结果
