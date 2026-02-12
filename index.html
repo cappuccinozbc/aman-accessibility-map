@@ -24,55 +24,47 @@
         .checkbox-group { display: flex; align-items: center; margin-bottom: 15px; }
         .checkbox-group label { margin-left: 8px; font-size: 13px; color: #666; cursor: pointer; }
         .checkbox-group input[type="checkbox"] { width: auto; margin: 0; }
-        .radio-group { margin-bottom: 15px; }
-        .radio-group label { display: block; font-size: 13px; color: #666; margin-bottom: 8px; cursor: pointer; }
         .hint { margin-top: 10px; font-size: 12px; color: #999; line-height: 1.5; }
         .result { margin-top: 20px; padding: 10px; background: #f0f9ff; border-radius: 4px; font-size: 13px; color: #0066cc; display: none; }
         .result.show { display: block; }
         .error { background: #fff2f0; color: #ff4d4f; }
         #container { position: fixed; top: 0; left: 350px; right: 0; bottom: 0; }
-        .measure-result { margin-top: 10px; padding: 8px; background: #fff7e6; border-radius: 4px; font-size: 12px; color: #d46b08; display: none; }
-        .measure-result.show { display: block; }
+        #mapToolbar { position: fixed; top: 10px; right: 10px; z-index: 1000; background: white; padding: 8px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .toolbar-btn { padding: 8px 12px; margin-left: 5px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .toolbar-btn:hover { background: #e6e6e6; }
+        .toolbar-btn.active { background: #1890ff; color: white; border-color: #1890ff; }
+        .toolbar-divider { margin: 0 5px; width: 1px; height: 20px; background: #ddd; display: inline-block; vertical-align: middle; }
     </style>
 </head>
 <body>
     <div class="sidebar">
         <h2>Walking Accessibility</h2>
-        
-        <div class="radio-group">
-            <label><input type="radio" name="mode" value="search" checked onclick="setMode('search')">&nbsp;Search Mode</label>
-            <label><input type="radio" name="mode" value="measure" onclick="setMode('measure')">&nbsp;Measure Distance</label>
-        </div>
-
-        <div id="searchPanel">
-            <div class="form-group"><label>Longitude</label><input type="number" id="lng" placeholder="e.g. 106.554" step="0.000001" value="106.554"></div>
-            <div class="form-group"><label>Latitude</label><input type="number" id="lat" placeholder="e.g. 29.563" step="0.000001" value="29.563"></div>
-            <div class="form-group"><label>Walking Time (min)</label><input type="number" id="time" placeholder="e.g. 10" min="1" max="60" value="10"></div>
-            <div class="form-group"><label>Grid Size (m)</label><select id="gridSize"><option value="200">200m (Fast)</option><option value="150" selected>150m (Balanced)</option><option value="100">100m (Precise)</option><option value="50">50m (Ultra Precise)</option></select><small>Smaller grid = more precise but slower</small></div>
-            <div class="checkbox-group"><input type="checkbox" id="showDebugPoints"><label for="showDebugPoints">Show debug points (Yellow=all, Red=boundary)</label></div>
-        </div>
-
-        <div id="measurePanel" style="display:none;">
-            <div class="hint">Click two points on the map to measure distance</div>
-            <div class="measure-result" id="measureResult"></div>
-        </div>
-
-        <div class="btn-group"><button class="btn" id="searchBtn" onclick="executeAction()">Search</button><button class="btn btn-secondary" onclick="clearMap()">Clear</button></div>
-        <div class="hint">Click map to set center (Search Mode)<br>Requires Amap Web API key</div>
+        <div class="form-group"><label>Longitude</label><input type="number" id="lng" placeholder="e.g. 106.554" step="0.000001" value="106.554"></div>
+        <div class="form-group"><label>Latitude</label><input type="number" id="lat" placeholder="e.g. 29.563" step="0.000001" value="29.563"></div>
+        <div class="form-group"><label>Walking Time (min)</label><input type="number" id="time" placeholder="e.g. 10" min="1" max="60" value="10"></div>
+        <div class="form-group"><label>Grid Size (m)</label><select id="gridSize"><option value="200">200m (Fast)</option><option value="150" selected>150m (Balanced)</option><option value="100">100m (Precise)</option><option value="50">50m (Ultra Precise)</option></select><small>Smaller grid = more precise but slower</small></div>
+        <div class="checkbox-group"><input type="checkbox" id="showDebugPoints"><label for="showDebugPoints">Show debug points (Yellow=all, Red=boundary)</label></div>
+        <div class="btn-group"><button class="btn" id="searchBtn" onclick="search()">Search</button><button class="btn btn-secondary" onclick="clearMap()">Clear</button></div>
+        <div class="hint">Click map to set center<br>Use toolbar for measuring</div>
         <div class="result" id="result"></div>
     </div>
     <div id="container"></div>
+    <div id="mapToolbar">
+        <button class="toolbar-btn" id="measureBtn" onclick="toggleMeasure()">Measure</button>
+        <span class="toolbar-divider"></span>
+        <button class="toolbar-btn" id="clearMeasureBtn" onclick="clearMeasure()">Clear</button>
+    </div>
     <script>
         const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
         const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
         let map = null, driving = null, polygon = null, markers = [], debugMarkers = [];
-        let currentMode = 'search';
+        let measureMode = false;
         let measurePoints = [];
         function loadScript() {
             return new Promise(function(resolve, reject) {
                 const script = document.createElement('script');
                 script.type = 'text/javascript';
-                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving';
+                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving,AMap.RulerTool';
                 script.onload = resolve;
                 script.onerror = reject;
                 document.head.appendChild(script);
@@ -82,15 +74,16 @@
             try {
                 await loadScript();
                 map = new AMap.Map('container', { zoom: 12, center: [106.554, 29.563], viewMode: '2D', mapStyle: 'amap://styles/normal' });
+                
                 map.on('click', function(e) {
-                    if (currentMode === 'search') {
+                    if (measureMode) {
+                        addMeasurePoint(e.lnglat.getLng(), e.lnglat.getLat());
+                    } else {
                         document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
                         document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
                         clearMarkers();
                         const marker = new AMap.Marker({ position: [e.lnglat.getLng(), e.lnglat.getLat()], map: map });
                         markers.push(marker);
-                    } else if (currentMode === 'measure') {
-                        addMeasurePoint(e.lnglat.getLng(), e.lnglat.getLat());
                     }
                 });
                 showResult('Map loaded!', false);
@@ -98,22 +91,22 @@
                 showResult('Map failed: ' + error.message, true);
             }
         }
-        function setMode(mode) {
-            currentMode = mode;
-            document.getElementById('searchPanel').style.display = mode === 'search' ? 'block' : 'none';
-            document.getElementById('measurePanel').style.display = mode === 'measure' ? 'block' : 'none';
-            document.getElementById('searchBtn').textContent = mode === 'search' ? 'Search' : 'Start Measure';
-            clearMap();
-        }
-        function executeAction() {
-            if (currentMode === 'search') {
-                search();
+        function toggleMeasure() {
+            measureMode = !measureMode;
+            if (measureMode) {
+                document.getElementById('measureBtn').classList.add('active');
+                showResult('Measure mode ON. Click map to add points.', false);
             } else {
-                document.getElementById('measureResult').innerHTML = 'Click two points on the map to measure';
-                document.getElementById('measureResult').classList.add('show');
-                measurePoints = [];
-                clearMarkers();
+                document.getElementById('measureBtn').classList.remove('active');
+                showResult('Measure mode OFF.', false);
             }
+        }
+        function clearMeasure() {
+            measureMode = false;
+            document.getElementById('measureBtn').classList.remove('active');
+            measurePoints = [];
+            clearMarkers();
+            showResult('Measurements cleared.', false);
         }
         function addMeasurePoint(lng, lat) {
             measurePoints.push({ lng: lng, lat: lat });
@@ -128,7 +121,7 @@
                 });
                 map.add(polyline);
                 markers.push(polyline);
-                document.getElementById('measureResult').innerHTML = 'Distance: ' + distance.toFixed(2) + ' meters';
+                showResult('Distance: ' + distance.toFixed(2) + ' meters', false);
             }
         }
         function calculateDistance(p1, p2) {
@@ -173,7 +166,8 @@
             clearMarkers();
             document.getElementById('lng').value = '';
             document.getElementById('lat').value = '';
-            document.getElementById('measureResult').classList.remove('show');
+            document.getElementById('measureBtn').classList.remove('active');
+            measureMode = false;
             showResult('Cleared', false);
         }
         function getWalkingDuration(origin, destination) {
@@ -186,8 +180,9 @@
                     if (script) {
                         document.head.removeChild(script);
                     }
-                    if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
-                        resolve(data.route.paths[0].duration);
+                    if (data.status === '1'') {
+                        const distance = parseFloat(data.route.paths[0].distance);
+                        resolve(distance / 83.33 * 60);
                     } else {
                         reject(data.info || 'Failed');
                     }
