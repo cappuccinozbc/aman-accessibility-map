@@ -346,71 +346,68 @@
             const walkingSpeed = 83.3; // 步行速度（米/分钟）
             const estimatedRadius = walkingSpeed * timeMinutes; // 估算半径
 
-            // 搜索范围：估算半径的1.2倍
-            const searchRadius = estimatedRadius * 1.2;
+            // 搜索范围：估算半径的1.5倍
+            const searchRadius = estimatedRadius * 1.5;
 
-            // 生成网格点
-            const gridPoints = [];
-            const gridCells = Math.ceil(searchRadius / gridSize); // 网格层数
+            // 方向分段数（用于分组收集最外围点）
+            const numDirections = 48;
+            const anglePerDirection = (2 * Math.PI) / numDirections;
 
-            for (let ring = 1; ring <= gridCells; ring++) {
+            // 存储每个方向的最远可达点
+            const farthestPoints = new Map();
+
+            // 按网格逐层搜索（从外向内）
+            const gridCells = Math.ceil(searchRadius / gridSize);
+            const origin = { lng, lat };
+            let totalChecked = 0;
+            let successCount = 0;
+
+            for (let ring = gridCells; ring >= 1; ring--) {
                 const currentRadius = ring * gridSize;
                 const circumference = 2 * Math.PI * currentRadius;
-                const numPoints = Math.max(6, Math.floor(circumference / gridSize)); // 每层的点数
+                const numPoints = Math.max(8, Math.floor(circumference / gridSize));
 
                 for (let i = 0; i < numPoints; i++) {
                     const angle = (i / numPoints) * 360 * (Math.PI / 180);
+
+                    // 计算属于哪个方向
+                    const directionIndex = Math.floor(((angle + Math.PI) % (2 * Math.PI)) / anglePerDirection);
+
+                    // 如果这个方向已经找到了最远点，跳过
+                    if (farthestPoints.has(directionIndex)) {
+                        continue;
+                    }
+
                     const point = {
                         lng: lng + (currentRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
                         lat: lat + (currentRadius / 111000) * Math.sin(angle),
                         distance: currentRadius,
-                        angle: angle,
-                        ring: ring
+                        angle: angle
                     };
-                    gridPoints.push(point);
-                }
-            }
 
-            // 按距离从远到近排序
-            gridPoints.sort((a, b) => b.distance - a.distance);
+                    try {
+                        const duration = await getWalkingDuration(origin, point);
+                        totalChecked++;
 
-            // 搜索最外围可达点
-            const boundaryPoints = [];
-            const origin = { lng, lat };
-            const visited = new Set();
-            let successCount = 0;
-            let failCount = 0;
-
-            for (const point of gridPoints) {
-                const key = `${point.ring}_${Math.floor(point.angle * 100)}`;
-                if (visited.has(key)) continue;
-                visited.add(key);
-
-                try {
-                    const duration = await getWalkingDuration(origin, point);
-
-                    if (duration <= maxTime) {
-                        // 可达，添加到边界点
-                        boundaryPoints.push({
-                            lng: point.lng,
-                            lat: point.lat,
-                            angle: point.angle
-                        });
-                        successCount++;
+                        if (duration <= maxTime) {
+                            // 可达，记录为这个方向的最远点
+                            farthestPoints.set(directionIndex, point);
+                            successCount++;
+                        }
+                    } catch (error) {
+                        console.log('查询失败:', error);
                     }
-                } catch (error) {
-                    console.log('查询失败:', error);
-                    failCount++;
                 }
             }
 
             // 如果没有找到可达点，返回估算值
-            if (boundaryPoints.length === 0) {
+            if (farthestPoints.size === 0) {
                 showResult('❌ 未找到可达点，请检查网络或扩大搜索范围', true);
                 return;
             }
 
-            // 按角度排序边界点
+            // 收集所有方向的最远点并按角度排序
+            const boundaryPoints = Array.from(farthestPoints.values());
             boundaryPoints.sort((a, b) => a.angle - b.angle);
 
             // 转换为坐标数组
@@ -438,7 +435,7 @@
             markers.push(centerMarker);
 
             const area = Math.PI * (estimatedRadius * estimatedRadius);
-            showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(estimatedRadius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>找到 ${successCount} 个边界点<br>算法：网格搜索（精确）`, false);
+            showResult(`✅ 查询成功！<br>步行 ${timeMinutes} 分钟可到达约 ${(estimatedRadius).toFixed(0)} 米范围内<br>覆盖面积约 ${(area / 1000000).toFixed(2)} 平方公里<br>找到 ${successCount} 个边界点（查询 ${totalChecked} 个点）<br>算法：网格搜索（精确）`, false);
         }
 
         // 显示结果
