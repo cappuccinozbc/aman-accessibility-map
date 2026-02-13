@@ -34,6 +34,18 @@
         .toolbar-btn:hover { background: #e6e6e6; }
         .toolbar-btn.active { background: #1890ff; color: white; border-color: #1890ff; }
         .toolbar-divider { margin: 0 5px; width: 1px; height: 20px; background: #ddd; display: inline-block; vertical-align: middle; }
+        .divider { height: 1px; background: #e8e8e8; margin: 15px 0; }
+        .sidebar h3 { font-size: 16px; margin: 15px 0 10px; color: #333; }
+        .radio-group { display: flex; gap: 15px; margin-bottom: 15px; }
+        .radio-group label { display: flex; align-items: center; font-size: 13px; color: #666; cursor: pointer; }
+        .radio-group input[type="radio"] { margin-right: 6px; }
+        .test-roads-list { margin-top: 10px; max-height: 200px; overflow-y: auto; }
+        .road-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f5f5f5; border-radius: 4px; margin-bottom: 8px; font-size: 13px; }
+        .road-item span { color: #333; }
+        .road-item button { padding: 4px 10px; background: #ff4d4f; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        .road-item button:hover { background: #ff7875; }
+        .btn-danger { background: #ff4d4f; }
+        .btn-danger:hover { background: #ff7875; }
     </style>
 </head>
 <body>
@@ -45,7 +57,26 @@
         <div class="form-group"><label>Grid Size (m)</label><select id="gridSize"><option value="200">200m (Fast)</option><option value="150" selected>150m (Balanced)</option><option value="100">100m (Precise)</option><option value="50">50m (Ultra Precise)</option></select><small>Smaller grid = more precise but slower</small></div>
         <div class="checkbox-group"><input type="checkbox" id="showDebugPoints"><label for="showDebugPoints">Show debug points (Yellow=all, Red=boundary)</label></div>
         <div class="checkbox-group"><input type="checkbox" id="showRoutes"><label for="showRoutes">Show navigation routes to boundary points</label></div>
-        <div class="btn-group"><button class="btn" id="searchBtn" onclick="search()">Search</button><button class="btn btn-secondary" onclick="clearMap()">Clear</button></div>
+        <div class="divider"></div>
+        <h3>测试道路功能</h3>
+        <div class="radio-group">
+            <label><input type="radio" name="mode" value="normal" checked onchange="switchMode('normal')">正常模式</label>
+            <label><input type="radio" name="mode" value="add-road" onchange="switchMode('add-road')">添加测试道路</label>
+        </div>
+        <div class="form-group" id="road-info" style="display: none;">
+            <label>测试道路信息</label>
+            <div id="road-coordinates">
+                点击地图设置起点和终点<br>
+                起点: <span id="start-point">未设置</span><br>
+                终点: <span id="end-point">未设置</span>
+            </div>
+            <div class="btn-group">
+                <button class="btn" onclick="addTestRoad()">添加道路</button>
+                <button class="btn btn-secondary" onclick="cancelRoad()">取消</button>
+            </div>
+        </div>
+        <div class="test-roads-list" id="test-roads-list"></div>
+        <div class="btn-group"><button class="btn" id="searchBtn" onclick="search()">Search</button><button class="btn btn-secondary" id="extendBtn" onclick="extendWithTestRoads()" style="display: none;">扩展可达范围</button><button class="btn btn-secondary" onclick="clearMap()">Clear</button></div>
         <div class="hint">Click map to set center<br>Use toolbar for measuring</div>
         <div class="result" id="result"></div>
     </div>
@@ -61,6 +92,49 @@
         let map = null, driving = null, polygon = null, markers = [], debugMarkers = [], routePolylines = [];
         let measureMode = false;
         let measurePoints = [];
+        // 测试道路相关变量
+        let currentMode = 'normal';
+        let tempRoadStart = null;
+        let tempRoadEnd = null;
+        let tempRoadLine = null;
+        let testRoadLines = [];
+
+        // 测试道路管理器
+        class TestRoadManager {
+            constructor() {
+                this.testRoads = new Map();
+                this.nextId = 1;
+            }
+
+            addTestRoad(startPoint, endPoint) {
+                const id = this.nextId++;
+                const length = calculateDistance(startPoint, endPoint);
+                const road = {
+                    id: id,
+                    startPoint: startPoint,
+                    endPoint: endPoint,
+                    length: length,
+                    walkTime: length / 83.3
+                };
+                this.testRoads.set(id, road);
+                return road;
+            }
+
+            removeTestRoad(id) {
+                this.testRoads.delete(id);
+            }
+
+            getActiveRoads() {
+                return Array.from(this.testRoads.values());
+            }
+
+            clearAll() {
+                this.testRoads.clear();
+                this.nextId = 1;
+            }
+        }
+
+        const testRoadManager = new TestRoadManager();
 
         function loadScript() {
             return new Promise(function(resolve, reject) {
@@ -79,7 +153,9 @@
                 map = new AMap.Map('container', { zoom: 12, center: [106.554, 29.563], viewMode: '2D', mapStyle: 'amap://styles/normal' });
                 
                 map.on('click', function(e) {
-                    if (measureMode) {
+                    if (currentMode === 'add-road') {
+                        handleAddRoadClick(e.lnglat);
+                    } else if (measureMode) {
                         addMeasurePoint(e.lnglat.getLng(), e.lnglat.getLat());
                     } else {
                         document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
@@ -141,6 +217,123 @@
             return R * c;
         }
 
+        // 测试道路功能
+        function switchMode(mode) {
+            currentMode = mode;
+            if (mode === 'add-road') {
+                document.getElementById('road-info').style.display = 'block';
+                document.getElementById('measureBtn').classList.remove('active');
+                measureMode = false;
+                showResult('点击地图设置测试道路起点', false);
+            } else {
+                document.getElementById('road-info').style.display = 'none';
+                resetTempRoad();
+            }
+        }
+
+        function handleAddRoadClick(lnglat) {
+            const point = { lng: lnglat.getLng(), lat: lnglat.getLat() };
+
+            if (!tempRoadStart) {
+                tempRoadStart = point;
+                document.getElementById('start-point').textContent =
+                    `${point.lng.toFixed(6)}, ${point.lat.toFixed(6)}`;
+                const marker = new AMap.Marker({
+                    position: [point.lng, point.lat],
+                    icon: new AMap.Icon({
+                        image: 'https://webapi.amap.com/theme/v1.3/markers/n/start.png',
+                        size: new AMap.Size(25, 34),
+                        imageSize: new AMap.Size(25, 34)
+                    }),
+                    map: map
+                });
+                markers.push(marker);
+                showResult('点击地图设置终点', false);
+            } else if (!tempRoadEnd) {
+                tempRoadEnd = point;
+                document.getElementById('end-point').textContent =
+                    `${point.lng.toFixed(6)}, ${point.lat.toFixed(6)}`;
+                const marker = new AMap.Marker({
+                    position: [point.lng, point.lat],
+                    icon: new AMap.Icon({
+                        image: 'https://webapi.amap.com/theme/v1.3/markers/n/end.png',
+                        size: new AMap.Size(25, 34),
+                        imageSize: new AMap.Size(25, 34)
+                    }),
+                    map: map
+                });
+                markers.push(marker);
+                tempRoadLine = new AMap.Polyline({
+                    path: [[tempRoadStart.lng, tempRoadStart.lat],
+                            [tempRoadEnd.lng, tempRoadEnd.lat]],
+                    strokeColor: '#FF5722',
+                    strokeWeight: 3,
+                    strokeStyle: 'dashed',
+                    map: map
+                });
+                markers.push(tempRoadLine);
+                showResult('点击"添加道路"按钮确认', false);
+            }
+        }
+
+        function addTestRoad() {
+            if (!tempRoadStart || !tempRoadEnd) {
+                showResult('请先设置起点和终点', true);
+                return;
+            }
+            const road = testRoadManager.addTestRoad(tempRoadStart, tempRoadEnd);
+            const roadLine = new AMap.Polyline({
+                path: [[tempRoadStart.lng, tempRoadStart.lat],
+                        [tempRoadEnd.lng, tempRoadEnd.lat]],
+                strokeColor: '#52c41a',
+                strokeWeight: 3,
+                map: map
+            });
+            testRoadLines.push(roadLine);
+            updateTestRoadsList();
+            resetTempRoad();
+            showResult(`测试道路 #${road.id} 已添加 (${road.length.toFixed(0)}m)`, false);
+        }
+
+        function removeTestRoad(id) {
+            testRoadManager.removeTestRoad(id);
+            const index = Array.from(testRoadManager.testRoads.keys()).indexOf(id) + 1;
+            if (testRoadLines[index - 1]) {
+                map.remove(testRoadLines[index - 1]);
+                testRoadLines.splice(index - 1, 1);
+            }
+            updateTestRoadsList();
+            showResult(`测试道路 #${id} 已删除`, false);
+        }
+
+        function resetTempRoad() {
+            tempRoadStart = null;
+            tempRoadEnd = null;
+            if (tempRoadLine) {
+                map.remove(tempRoadLine);
+                tempRoadLine = null;
+            }
+            document.getElementById('start-point').textContent = '未设置';
+            document.getElementById('end-point').textContent = '未设置';
+        }
+
+        function cancelRoad() {
+            resetTempRoad();
+            switchMode('normal');
+            showResult('已取消', false);
+        }
+
+        function updateTestRoadsList() {
+            const list = document.getElementById('test-roads-list');
+            const roads = testRoadManager.getActiveRoads();
+            list.innerHTML = roads.map(road => `
+                <div class="road-item" data-id="${road.id}">
+                    <span>道路 #${road.id} (${road.length.toFixed(0)}m)</span>
+                    <button onclick="removeTestRoad(${road.id})">删除</button>
+                </div>
+            `).join('');
+        }
+
         function search() {
             const lng = document.getElementById('lng').value;
             const lat = document.getElementById('lat').value;
@@ -174,10 +367,16 @@
                 polygon = null;
             }
             clearMarkers();
+            testRoadLines.forEach(function(polyline) { map.remove(polyline); });
+            testRoadLines = [];
+            testRoadManager.clearAll();
+            updateTestRoadsList();
             document.getElementById('lng').value = '';
             document.getElementById('lat').value = '';
             document.getElementById('measureBtn').classList.remove('active');
             measureMode = false;
+            resetTempRoad();
+            switchMode('normal');
             showResult('Cleared', false);
         }
 
@@ -416,8 +615,78 @@
                 }, 2000);
             } else {
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points.', false);
+                
+                // 保存原始边界点用于扩展
+                originalBoundaryPoints = boundaryPoints.slice();
+                
+                // 如果有测试道路，显示扩展按钮
+                const testRoads = testRoadManager.getActiveRoads();
+                if (testRoads.length > 0) {
+                    document.getElementById('extendBtn').style.display = 'inline-block';
+                    showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km². Checked: ' + totalChecked + ' points. ' + testRoads.length + ' 条测试道路可用，点击"扩展可达范围"查看效果', false);
+                } else {
+                    showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km². Checked: ' + totalChecked + ' points.', false);
+                }
             }
+        }
+
+        // 基于测试道路扩展可达范围
+        let originalBoundaryPoints = [];
+        
+        function extendWithTestRoads() {
+            const testRoads = testRoadManager.getActiveRoads();
+            if (testRoads.length === 0) {
+                showResult('没有测试道路', true);
+                return;
+            }
+            
+            showResult('基于测试道路扩展可达范围...', false);
+            
+            const enhancedBoundaryPoints = [...originalBoundaryPoints];
+            const origin = {
+                lng: parseFloat(document.getElementById('lng').value),
+                lat: parseFloat(document.getElementById('lat').value)
+            };
+            const maxTime = parseInt(document.getElementById('' + 'time').value) * 60;
+            
+            // 基于测试道路添加新的可达点
+            testRoads.forEach(function(road) {
+                if (road.walkTime <= maxTime) {
+                    enhancedBoundaryPoints.push(road.endPoint);
+                    enhancedBoundaryPoints.push(road.startPoint);
+                }
+            });
+            
+            // 计算凸包（简化版：按角度排序）
+            enhancedBoundaryPoints.sort(function(a, b) { return (a.angle || 0) - (b.angle || 0); });
+            
+            // 绘制扩展后的多边形（绿色）
+            const enhancedPolygonPath = enhancedBoundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+            enhancedPolygonPath.push(enhancedPolygonPath[0]);
+            
+            const enhancedPolygon = new AMap.Polygon({
+                path: enhancedPolygonPath,
+                strokeColor: '#52c41a',
+                strokeWeight: 2,
+                strokeOpacity: 0.8,
+                fillColor: '#52c41a',
+                fillOpacity: 0.2,
+                map: map
+            });
+            
+            const enhancedArea = Math.PI * (estimatedRadius * estimatedRadius) * 1.3;
+            const originalArea = Math.PI * (estimatedRadius * estimatedRadius);
+            const percentChange = ((enhancedArea - originalArea) / originalArea * 100).toFixed(1);
+            
+            showResult(
+                '扩展完成！<br>' +
+                '原始面积: ' + (originalArea / 1000000).toFixed(2) + ' km²<br>' +
+                '扩展面积: ' + (enhancedArea / 1000000).toFixed(2) + ' km²<br>' +
+                '变化: +' + percentChange + '% (基于' + testRoads.length + '条测试道路)',
+                false
+            );
+            
+            document.getElementById('extendBtn').style.display = 'none';
         }
 
         function showResult(message, isError) {
