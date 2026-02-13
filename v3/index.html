@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>路网编辑与可达性搜索 (v3)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; overflow: hidden; }
+        
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 400px;
+            height: 100%;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .sidebar h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .sidebar h3 {
+            font-size: 16px;
+            margin: 20px 0 10px;
+            color: #333;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #1890ff;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover { background: #40a9ff; }
+        .btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+        .btn-secondary { background: #8c8c8c; }
+        .btn-secondary:hover { background: #a8a8a8; }
+        .btn-success { background: #52c41a; }
+        .btn-success:hover { background: #73d13d; }
+        .btn-danger { background: #ff4d4f; }
+        .btn-danger:hover { background: #ff7875; }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .btn-group .btn {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        
+        .radio-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+        }
+        
+        .radio-group input[type="radio"] {
+            margin-right: 6px;
+        }
+        
+        .hint {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #999;
+            line-height: 1.5;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f0f9ff;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #0066cc;
+            display: none;
+        }
+        
+        .result.show { display: block; }
+        .result.error { background: #fff2f0; color: #ff4d4f; }
+        
+        #container {
+            position: fixed;
+            top: 0;
+            left: 400px;
+            right: 0;
+            bottom: 0;
+        }
+        
+        .divider {
+            height: 1px;
+            background: #e8e8e8;
+            margin: 20px 0;
+        }
+        
+        .node-list, .edge-list {
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            background: #f5f5f5;
+            border-radius: 3px;
+            margin-bottom: 5px;
+        }
+        
+        .list-item button {
+            padding: 3px 8px;
+            background: #ff4d4f;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .stat-item {
+            padding: 8px;
+            background: #f0f9ff;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .stat-item .value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        
+        .stat-item .label {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #1890ff;
+            color: white;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>路网编辑与可达性搜索 v3</h2>
+        
+        <div class="form-group">
+            <label>中心点经度</label>
+            <input type="number" id="lng" value="106.554" step="0.000001">
+        </div>
+        
+        <div class="form-group">
+            <label>中心点纬度</label>
+            <input type="number" id="lat" value="29.563" step="0.000001">
+        </div>
+        
+        <div class="form-group">
+            <label>步行时间 (分钟)</label>
+            <input type="number" id="time" value="10" min="1" max="60">
+        </div>
+        
+        <div class="divider"></div>
+        
+        <h3>当前模式 <span id="mode-badge" class="status-badge">查看</span></h3>
+        <div class="radio-group">
+            <label><input type="radio" name="mode" value="view" checked onchange="switchMode('view')">查看模式</label>
+            <label><input type="radio" name="mode" value="add-node" onchange="switchMode('add-node')">添加节点</label>
+            <label><input type="radio" name="mode" value="add-edge" onchange="switchMode('add-edge')">添加道路</label>
+            <label><input type="radio" name="mode" value="delete" onchange="switchMode('delete')">删除模式</label>
+        </div>
+        
+        <div class="form-group" id="edge-info" style="display: none;">
+            <label>道路信息</label>
+            <div id="edge-coordinates">
+                起点: <span id="start-point" style="color: #1890ff;">未设置</span><br>
+                终点: <span id="end-point" style="color: #ff4d4f;">未设置</span>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-success" onclick="addEdge()">添加道路</button>
+                <button class="btn btn-secondary" onclick="cancelEdge()">取消</button>
+            </div>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <h3>路网操作</h3>
+        <div class="btn-group">
+            <button class="btn" onclick="fetchRoadNetwork()">获取路网数据</button>
+            <button class="btn btn-success" onclick="searchReachable()">搜索可达范围</button>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-secondary" onclick="exportRoadNetwork()">导出路网</button>
+            <button class="btn btn-secondary" onclick="importRoadNetwork()">导入路网</button>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-danger" onclick="clearAll()">清除所有</button>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <h3>路网统计</h3>
+        <div class="stats">
+            <div class="stat-item">
+                <div class="value" id="node-count">0</div>
+                <div class="label">节点数</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="edge-count">0</div>
+                <div class="label">道路数</div>
+            </div>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <h3>最近操作</h3>
+        <div class="result" id="result">
+            点击地图开始操作...
+        </div>
+    </div>
+    
+    <div id="container"></div>
+    
+    <script>
+        const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
+        const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
+        
+        let map = null;
+        let currentMode = 'view';
+        let roadNetwork = null;
+        let tempEdgeStart = null;
+        let tempEdgeEnd = null;
+        let tempEdgeLine = null;
+        let nodeMarkers = new Map();
+        let edgeLines = new Map();
+        let reachablePolygon = null;
+        let reachableNodes = [];
+        
+        // 路网节点
+        class RoadNode {
+            constructor(id, lng, lat) {
+                this.id = id;
+                this.lng = lng;
+                this.lat = lat;
+                this.connections = new Set();
+            }
+        }
+        
+        // 路网
+        class RoadNetwork {
+            constructor() {
+                this.nodes = new Map();
+                this.edges = new Map();
+                this.adjList = new Map();
+                this.nextNodeId = 1;
+            }
+            
+            addNode(lng, lat) {
+                const id = 'n_' + this.nextNodeId++;
+                const node = new RoadNode(id, lng, lat);
+                this.nodes.set(id, node);
+                this.adjList.set(id, new Set());
+                return node;
+            }
+            
+            removeNode(id) {
+                const node = this.nodes.get(id);
+                if (!node) return;
+                
+                node.connections.forEach(neighborId => {
+                    this.removeEdge(id, neighborId);
+                });
+                
+                this.nodes.delete(id);
+                this.adjList.delete(id);
+            }
+            
+            addEdge(fromId, toId, length) {
+                const edgeId = fromId + '-' + toId;
+                const edge = { from: fromId, to: toId, length: length, time: length / 83.33 * 60 };
+                this.edges.set(edgeId, edge);
+                
+                this.nodes.get(fromId).connections.add(toId);
+                this.nodes.get(toId).connections.add(fromId);
+                
+                this.adjList.get(fromId).add(toId);
+                this.adjList.get(toId).add(fromId);
+                
+                return edge;
+            }
+            
+            removeEdge(fromId, toId) {
+                const edgeId1 = fromId + '-' + toId;
+                const edgeId2 = toId + '-' + fromId;
+                this.edges.delete(edgeId1);
+                this.edges.delete(edgeId2);
+                
+                if (this.adjList.has(fromId)) {
+                    this.adjList.get(fromId).delete(toId);
+                }
+                if (this.adjList.has(toId)) {
+                    this.adjList.get(toId).delete(fromId);
+                }
+                
+                if (this.nodes.has(fromId)) {
+                    this.nodes.get(fromId).connections.delete(toId);
+                }
+                if (this.nodes.has(toId)) {
+                    this.nodes.get(toId).connections.delete(fromId);
+                }
+            }
+            
+            getStats() {
+                return {
+                    nodes: this.nodes.size,
+                    edges: this.edges.size / 2  // 无向图，边数除以2
+                };
+            }
+            
+            exportToJSON() {
+                return JSON.stringify({
+                    nodes: Array.from(this.nodes.values()),
+                    edges: Array.from(this.edges.values())
+                }, null, 2);
+            }
+            
+            importFromJSON(jsonStr) {
+                const data = JSON.parse(jsonStr);
+                this.nodes.clear();
+                this.edges.clear();
+                this.adjList.clear();
+                this.nextNodeId = 1;
+                
+                data.nodes.forEach(node => {
+                    const newNode = new RoadNode(node.id, node.lng, node.lat);
+                    newNode.connections = new Set(node.connections || []);
+                    this.nodes.set(node.id, newNode);
+                    this.adjList.set(node.id, new Set());
+                    this.nextNodeId = Math.max(this.nextNodeId, parseInt(node.id.split('_')[1]) + 1);
+                });
+                
+                data.edges.forEach(edge => {
+                    this.edges.set(edge.from + '-' + edge.to, edge);
+                    this.adjList.get(edge.from).add(edge.to);
+                    this.adjList.get(edge.to).add(edge.from);
+                });
+            }
+        }
+        
+        // 初始化
+        async function init() {
+            roadNetwork = new RoadNetwork();
+            
+            // 加载地图
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.type = 'text/javascript';
+                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+            
+            map = new AMap.Map('container', {
+                zoom: 14,
+                center: [106.554, 29.563],
+                viewMode: '2D',
+                mapStyle: 'amap://styles/normal'
+            });
+            
+            map.on('click', handleMapClick);
+            
+            updateStats();
+            showResult('地图已加载！点击地图开始操作', false);
+        }
+        
+        // 处理地图点击
+        function handleMapClick(e) {
+            const lng = e.lnglat.getLng();
+            const lat = e.lnglat.getLat();
+            
+            if (currentMode === 'add-node') {
+                addNodeToNetwork(lng, lat);
+            } else if (currentMode === 'add-edge') {
+                handleEdgeClick(lng, lat);
+            } else if (currentMode === 'delete') {
+                deleteNearestElement(lng, lat);
+            } else {
+                showResult(`坐标: (${lng.toFixed(6)}, ${lat.toFixed(6)})`, false);
+            }
+        }
+        
+        // 切换模式
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // 更新模式徽章
+            const modeBadge = document.getElementById('mode-badge');
+            const modeNames = {
+                'view': '查看',
+                'add-node': '添加节点',
+                'add-edge': '添加道路',
+                'delete': '删除'
+            };
+            modeBadge.textContent = modeNames[mode];
+            
+            // 隐藏/显示道路信息面板
+            document.getElementById('edge-info').style.display = 
+                mode === 'add-edge' ? 'block' : 'none';
+            
+            // 重置临时边
+            if (mode !== 'add-edge') {
+                cancelEdge();
+            }
+            
+            // 更新提示信息
+            const hints = {
+                'view': '点击地图查看坐标',
+                'add-node': '点击地图添加路网节点',
+                'add-edge': '点击两个节点创建道路',
+                'delete': '点击节点或道路进行删除'
+            };
+            showResult(hints[mode], false);
+        }
+        
+        // 添加节点
+        function addNodeToNetwork(lng, lat) {
+            const node = roadNetwork.addNode(lng, lat);
+            
+            // 创建节点标记
+            const marker = new AMap.CircleMarker({
+                center: [lng, lat],
+                radius: 8,
+                strokeColor: '#1890ff',
+                strokeWeight: 2,
+                fillColor: '#1890ff',
+                fillOpacity: 0.8,
+                map: map
+            });
+            
+            nodeMarkers.set(node.id, marker);
+            updateStats();
+            
+            showResult(`已添加节点 #${node.id.split('_')[1]}`, false);
+        }
+        
+        // 处理添加道路的点击
+        function handleEdgeClick(lng, lat) {
+            // 找到最近的节点
+            const nearestNode = findNearestNode(lng, lat);
+            
+            if (!nearestNode) {
+                showResult('附近没有节点，请先添加节点', true);
+                return;
+            }
+            
+            if (!tempEdgeStart) {
+                tempEdgeStart = nearestNode;
+                document.getElementById('start-point').textContent = 
+                    `节点 #${nearestNode.id.split('_')[1]}`;
+                showResult('已设置起点，请点击选择终点', false);
+            } else if (!tempEdgeEnd && nearestNode.id !== tempEdgeStart.id) {
+                tempEdgeEnd = nearestNode;
+                document.getElementById('end-point').textContent = 
+                    `节点 #${nearestNode.id.split('_')[1]}`;
+                
+                // 绘制临时线
+                tempEdgeLine = new AMap.Polyline({
+                    path: [[tempEdgeStart.lng, tempEdgeStart.lat],
+                            [tempEdgeEnd.lng, tempEdgeEnd.lat]],
+                    strokeColor: '#ff4d4f',
+                    strokeWeight: 3,
+                    strokeStyle: 'dashed',
+                    map: map
+                });
+                
+                showResult('点击"添加道路"按钮确认', false);
+            }
+        }
+        
+        // 添加道路
+        function addEdge() {
+            if (!tempEdgeStart || !tempEdgeEnd) {
+                showResult('请先选择起点和终点', true);
+                return;
+            }
+            
+            const length = calculateDistance(tempEdgeStart, tempEdgeEnd);
+            const edge = roadNetwork.addEdge(tempEdgeStart.id, tempEdgeEnd.id, length);
+            
+            // 绘制道路
+            const polyline = new AMap.Polyline({
+                path: [[tempEdgeStart.lng, tempEdgeStart.lat],
+                        [tempEdgeEnd.lng, tempEdgeEnd.lat]],
+                strokeColor: '#52c41a',
+                strokeWeight: 3,
+                map: map
+            });
+            
+            edgeLines.set(edge.from + '-' + edge.to, polyline);
+            
+            cancelEdge();
+            updateStats();
+            
+            showResult(`已添加道路 (${length.toFixed(0)}m)`, false);
+        }
+        
+        // 取消添加道路
+        function cancelEdge() {
+            tempEdgeStart = null;
+            tempEdgeEnd = null;
+            
+            if (tempEdgeLine) {
+                map.remove(tempEdgeLine);
+                tempEdgeLine = null;
+            }
+            
+            document.getElementById('start-point').textContent = '未设置';
+            document.getElementById('end-point').textContent = '未设置';
+        }
+        
+        // 删除最近的元素
+        function deleteNearestElement(lng, lat) {
+            // 查找最近的节点
+            const nearestNode = findNearestNode(lng, lat, 20);
+            
+            if (nearestNode) {
+                roadNetwork.removeNode(nearestNode.id);
+                
+                // 移除标记
+                if (nodeMarkers.has(nearestNode.id)) {
+                    map.remove(nodeMarkers.get(nearestNode.id));
+                    nodeMarkers.delete(nearestNode.id);
+                }
+                
+                updateStats();
+                showResult(`已删除节点 #${nearestNode.id.split('_')[1]}`, false);
+                return;
+            }
+            
+            // 查找最近的边
+            const nearestEdge = findNearestEdge(lng, lat, 20);
+            if (nearestEdge) {
+                roadNetwork.removeEdge(nearestEdge.from, nearestEdge.to);
+                
+                // 移除线条
+                const edgeId = nearestEdge.from + '-' + nearestEdge.to;
+                if (edgeLines.has(edgeId)) {
+                    map.remove(edgeLines.get(edgeId));
+                    edgeLines.delete(edgeId);
+                }
+                
+                updateStats();
+                showResult('已删除道路', false);
+                return;
+            }
+            
+            showResult('附近没有可删除的元素', true);
+        }
+        
+        // 查找最近的节点
+        function findNearestNode(lng, lat, maxDistance = 50) {
+            let nearest = null;
+            let minDist = maxDistance;
+            
+            roadNetwork.nodes.forEach(node => {
+                const dist = calculateDistance({ lng, lat }, node);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = node;
+                }
+            });
+            
+            return nearest;
+        }
+        
+        // 查找最近的边
+        function findNearestEdge(lng, lat, maxDistance = 50) {
+            let nearest = null;
+            let minDist = maxDistance;
+            
+            roadNetwork.edges.forEach(edge => {
+                const node1 = roadNetwork.nodes.get(edge.from);
+                const node2 = roadNetwork.nodes.get(edge.to);
+                
+                if (node1 && node2) {
+                    const dist = pointToLineDistance({ lng, lat }, node1, node2);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = edge;
+                    }
+                }
+            });
+            
+            return nearest;
+        }
+        
+        // 点到线段的距离
+        function pointToLineDistance(point, lineStart, lineEnd) {
+            const A = point.lng - lineStart.lng;
+            const B = point.lat - lineStart.lat;
+            const C = lineEnd.lng - lineStart.lng;
+            const D = lineEnd.lat - lineStart.lat;
+            
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+            
+            if (lenSq !== 0) {
+                param = dot / lenSq;
+            }
+            
+            let xx, yy;
+            
+            if (param < 0) {
+                xx = lineStart.lng;
+                yy = lineStart.lat;
+            } else if (param > 1) {
+                xx = lineEnd.lng;
+                yy = lineEnd.lat;
+            } else {
+                xx = lineStart.lng + param * C;
+                yy = lineStart.lat + param * D;
+            }
+            
+            const dx = point.lng - xx;
+            const dy = point.lat - yy;
+            
+            return Math.sqrt(dx * dx + dy * dy) * 111000;
+        }
+        
+        // 计算两点距离
+        function calculateDistance(p1, p2) {
+            const R = 6371000;
+;
+            const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+            const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+                      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+        
+        // 获取路网数据（从高德API）
+        async function fetchRoadNetwork() {
+            const lng = parseFloat(document.getElementById('lng').value);
+            const lat = parseFloat(document.getElementById('lat').value);
+            
+            showResult('正在获取路网数据...', false);
+            
+            // 使用多点采样获取路网
+            const directions = [0, 45, 90, 135, 180, 225, 270, 315];
+            const distances = [500, 1000, 1500];
+            
+            let totalPoints = 0;
+            
+            for (const direction of directions) {
+                for (const dist of distances) {
+                    const angle = direction * Math.PI / 180;
+                    const targetLng = lng + (dist * Math.cos(angle) / 111000 / Math.cos(lat * Math.PI / 180));
+                    const targetLat = lat + (dist * Math.sin(angle) / 111000);
+                    
+                    try {
+                        const path = await fetchWalkingPath(lng, lat, targetLng, targetLat);
+                        extractPathToNetwork(path, lng, lat);
+                        totalPoints++;
+                    } catch (error) {
+                        console.log('Fetch error:', error);
+                    }
+                }
+            }
+            
+            visualizeNetwork();
+            updateStats();
+            
+            showResult(`已获取路网数据，共 ${roadNetwork.nodes.size} 个节点，${Math.floor(roadNetwork.edges.size / 2)} 条道路`, false);
+        }
+        
+        // 获取步行路径
+        function fetchWalkingPath(lng1, lat1, lng2, lat2) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                const url = 'https://restapi.amap.com/v3/direction/walking?key=' + AMAP_WEB_KEY + 
+                           '&origin=' + lng1 + ',' + lat1 + 
+                           '&destination=' + lng2 + ',' + lat2 + 
+                           '&output=json&callback=' + callbackName;
+                
+                window[callbackName] = (data) => {
+                    delete window[callbackName];
+                    const script = document.getElementById(callbackName);
+                    if (script) {
+                        document.head.removeChild(script);
+                    }
+                    
+                    if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
+                        resolve(data.route.paths[0]);
+                    } else {
+                        reject(data.info || 'Failed');
+                    }
+                };
+                
+                const script = document.createElement('script');
+                script.id = callbackName;
+                script.src = url;
+                script.onerror = () => {
+                    delete window[callbackName];
+                    reject('Network error');
+                };
+                document.head.appendChild(script);
+            });
+        }
+        
+        // 提取路径到路网
+        function extractPathToNetwork(path, centerLng, centerLat) {
+            if (!path.steps || path.steps.length === 0) return;
+            
+            let prevNode = null;
+            
+            path.steps.forEach(step => {
+                if (!step.polyline) return;
+                
+                const coords = step.polyline.split(';');
+                
+                coords.forEach((coord, index) => {
+                    const [lng, lat] = coord.split(',').map(parseFloat);
+                    
+                    // 查找或创建节点
+                    let node = findOrCreateNode(lng, lat, 10);
+                    
+                    if (prevNode && node.id !== prevNode.id) {
+                        const length = calculateDistance(prevNode, node);
+                        
+                        // 检查边是否已存在
+                        const edgeId1 = prevNode.id + '-' + node.id;
+                        const edgeId2 = node.id + '-' + prevNode.id;
+                        
+                        if (!roadNetwork.edges.has(edgeId1) && !roadNetwork.edges.has(edgeId2)) {
+                            roadNetwork.addEdge(prevNode.id, node.id, length);
+                        }
+                    }
+                    
+                    prevNode = node;
+                });
+            });
+        }
+        
+        // 查找或创建节点
+        function findOrCreateNode(lng, lat, tolerance) {
+            const existingNode = findNearestNode(lng, lat, tolerance);
+            
+            if (existingNode) {
+                return existingNode;
+            }
+            
+            return roadNetwork.addNode(lng, lat);
+        }
+        
+        // 可视化路网
+        function visualizeNetwork() {
+            // 清除现有的可视化
+            nodeMarkers.forEach(marker => map.remove(marker));
+            nodeMarkers.clear();
+            
+            edgeLines.forEach(line => map.remove(line));
+            edgeLines.clear();
+            
+            // 绘制节点
+            roadNetwork.nodes.forEach(node => {
+                const marker = new AMap.CircleMarker({
+                    center: [node.lng, node.lat],
+                    radius: 6,
+                    strokeColor: '#1890ff',
+                    strokeWeight: 1,
+                    fillColor: '#1890ff',
+                    fillOpacity: 0.6,
+                    map: map
+                });
+                
+                nodeMarkers.set(node.id, marker);
+            });
+            
+            // 绘制边
+            roadNetwork.edges.forEach(edge => {
+                const node1 = roadNetwork.nodes.get(edge.from);
+                const node2 = roadNetwork.nodes.get(edge.to);
+                
+                if (node1 && node2) {
+                    const polyline = new AMap.Polyline({
+                        path: [[node1.lng, node1.lat], [node2.lng, node2.lat]],
+                        strokeColor: '#52c41a',
+                        strokeWeight: 2,
+                        map: map
+                    });
+                    
+                    edgeLines.set(edge.from + '-' + edge.to, polyline);
+                }
+            });
+        }
+        
+        // 搜索可达范围（Dijkstra算法）
+        function searchReachable() {
+            const lng = parseFloat(document.getElementById('lng').value);
+            const lat = parseFloat(document.getElementById('lat').value);
+            const maxTimeMinutes = parseFloat(document.getElementById('time').value);
+            const maxTimeSeconds = maxTimeMinutes * 60;
+            
+            if (roadNetwork.nodes.size === 0) {
+                showResult('请先获取或创建路网', true);
+                return;
+            }
+            
+            showResult('正在计算可达范围...', false);
+            
+            // 找到最近的节点作为起点
+            const startNode = findNearestNode(lng, lat, 100);
+            
+            if (!startNode) {
+                showResult('中心点附近没有路网节点', true);
+                return;
+            }
+            
+            // Dijkstra算法
+            const distances = new Map();
+            const visited = new Set();
+            const pq = [];
+            
+            roadNetwork.nodes.forEach(node => {
+                distances.set(node.id, Infinity);
+            });
+            
+            distances.set(startNode.id, 0);
+            pq.push({ nodeId: startNode.id, dist: 0 });
+            
+            while (pq.length > 0) {
+                pq.sort((a, b) => a.dist - b.dist);
+                const { nodeId, dist } = pq.shift();
+                
+                if (visited.has(nodeId)) continue;
+                visited.add(nodeId);
+                
+                if (dist > maxTimeSeconds) continue;
+                
+                const neighbors = roadNetwork.adjList.get(nodeId) || new Set();
+                
+                neighbors.forEach(neighborId => {
+                    if (visited.has(neighborId)) return;
+                    
+                    const edge = findEdge(nodeId, neighborId);
+                    if (!edge) return;
+                    
+                    const newDist = dist + edge.time;
+                    
+                    if (newDist < distances.get(neighborId)) {
+                        distances.set(neighborId, newDist);
+                        pq.push({ nodeId: neighborId, dist: newDist });
+                    }
+                });
+            }
+            
+            // 收集可达节点
+            reachableNodes = [];
+            distances.forEach((dist, nodeId) => {
+                if (dist <= maxTimeSeconds) {
+                    const node = roadNetwork.nodes.get(nodeId);
+                    if (node) {
+                        reachableNodes.push(node);
+                    }
+                }
+            });
+            
+            // 绘制可达范围多边形（简化版：凸包）
+            visualizeReachableArea();
+            
+            showResult(`可达范围包含 ${reachableNodes.length} 个节点`, false);
+        }
+        
+        // 查找边
+        function findEdge(fromId, toId) {
+            return roadNetwork.edges.get(fromId + '-' + toId) ||
+                   roadNetwork.edges.get(toId + '-' + fromId);
+        }
+        
+        // 可视化可达范围
+        function visualizeReachableArea() {
+            if (reachablePolygon) {
+                map.remove(reachablePolygon);
+            }
+            
+            if (reachableNodes.length < 3) {
+                return;
+            }
+            
+            // 计算凸包（简化版：按角度排序）
+            const centerLng = reachableNodes.reduce((sum, n) => sum + n.lng, 0) / reachableNodes.length;
+            const centerLat = reachableNodes.reduce((sum, n) => sum + n.lat, 0) / reachableNodes.length;
+            
+            const sortedNodes = reachableNodes.map(node => ({
+                node,
+                angle: Math.atan2(node.lat - centerLat, node.lng - centerLng)
+            })).sort((a, b) => a.angle - b.angle);
+            
+            const polygonPath = sortedNodes.map(item => [item.node.lng, item.node.lat]);
+            polygonPath.push(polygonPath[0]);
+            
+            reachablePolygon = new AMap.Polygon({
+                path: polygonPath,
+                strokeColor: '#ff9800',
+                strokeWeight: 2,
+                strokeOpacity: 0.8,
+                fillColor: '#ff9800',
+                fillOpacity: 0.3,
+                map: map
+            });
+        }
+        
+        // 导出路网
+        function exportRoadNetwork() {
+            const json = roadNetwork.exportToJSON();
+            
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'road_network.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showResult('路网已导出', false);
+        }
+        
+        // 导入路网
+        function importRoadNetwork() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = (event) => {
+                    try {
+                        roadNetwork.importFromJSON(event.target.result);
+                        visualizeNetwork();
+                        updateStats();
+                        showResult('路网已导入', false);
+                    } catch (error) {
+                        showResult('导入失败：' + error.message, true);
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+        
+        // 清除所有
+        function clearAll() {
+            // 清除地图元素
+            nodeMarkers.forEach(marker => map.remove(marker));
+            nodeMarkers.clear();
+            
+            edgeLines.forEach(line => map.remove(line));
+            edgeLines.clear();
+            
+            if (reachablePolygon) {
+                map.remove(reachablePolygon);
+                reachablePolygon = null;
+            }
+            
+            // 清除路网
+           
+            roadNetwork = new RoadNetwork();
+            reachableNodes = [];
+            
+            cancelEdge();
+            updateStats();
+            
+            showResult('已清除所有数据', false);
+        }
+        
+        // 更新统计信息
+        function updateStats() {
+            const stats = roadNetwork.getStats();
+            document.getElementById('node-count').textContent = stats.nodes;
+            document.getElementById('edge-count').textContent = stats.edges;
+        }
+        
+        // 显示结果
+        function showResult(message, isError) {
+            const resultEl = document.getElementById('result');
+            resultEl.innerHTML = message;
+            resultEl.className = 'result show';
+            if (isError) {
+                resultEl.classList.add('error');
+            }
+        }
+        
+        window.onload = init;
+    </script>
+</body>
+</html>
