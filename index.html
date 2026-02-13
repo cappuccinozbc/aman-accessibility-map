@@ -263,7 +263,8 @@
                     };
                     
                     try {
-                        const duration = await getWalkingDuration(origin, point);
+                        const result = await getWalkingDuration(origin, point);
+                        const duration = result.time;
                         totalChecked++;
                         
                         if (showDebug) {
