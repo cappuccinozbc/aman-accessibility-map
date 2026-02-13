@@ -206,6 +206,39 @@
             font-size: 11px;
             margin-left: 10px;
         }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .checkbox-group label {
+            margin-left: 6px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+            display: none;
+        }
+        
+        .progress-bar.show {
+            display: block;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #1890ff;
+            transition: width 0.3s;
+        }
     </style>
 </head>
 <body>
@@ -225,6 +258,26 @@
         <div class="form-group">
             <label>步行时间 (分钟)</label>
             <input type="number" id="time" value="10" min="1" max="60">
+        </div>
+        
+        <div class="divider"></div>
+        
+        <h3>可视化控制</h3>
+        <div class="checkbox-group">
+            <input type="checkbox" id="showNodes" checked onchange="toggleVisualization('nodes')">
+            <label for="showNodes">显示节点</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="showEdges" checked onchange="toggleVisualization('edges')">
+            <label for="showEdges">显示道路</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="showReachable" onchange="toggleVisualization('reachable')">
+            <label for="showReachable">显示可达范围</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="showPaths" onchange="toggleVisualization('paths')">
+            <label for="showPaths">显示可达路径</label>
         </div>
         
         <div class="divider"></div>
@@ -261,7 +314,19 @@
             <button class="btn btn-secondary" onclick="importRoadNetwork()">导入路网</button>
         </div>
         <div class="btn-group">
+            <button class="btn btn-secondary" onclick="exportReachableNodes()">导出可达节点</button>
+            <button class="btn btn-secondary" onclick="exportStatistics()">导出统计报告</button>
+        </div>
+        <div class="btn-group">
+            <button class="btn" onclick="saveState()">保存当前状态</button>
+            <button class="btn" onclick="compareWithSaved()">对比保存的状态</button>
+        </div>
+        <div class="btn-group">
             <button class="btn btn-danger" onclick="clearAll()">清除所有</button>
+        </div>
+        
+        <div class="progress-bar" id="progressBar">
+            <div class="progress-fill" id="progressFill"></div>
         </div>
         
         <div class="divider"></div>
@@ -277,6 +342,16 @@
                 <div class="label">道路数</div>
             </div>
         </div>
+        <div class="stats">
+            <div class="stat-item">
+                <div class="value" id="reachable-count">0</div>
+                <div class="label">可达节点</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="area-km2">0</div>
+                <div class="label">面积(km²)</div>
+            </div>
+        </div>
         
         <div class="divider"></div>
         
@@ -288,7 +363,7 @@
     
     <div id="container"></div>
     
-    <script>
+    <script
         const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
         const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
         
@@ -302,6 +377,8 @@
         let edgeLines = new Map();
         let reachablePolygon = null;
         let reachableNodes = [];
+        let reachablePathLines = [];
+        let savedState = null;
         
         // 路网节点
         class RoadNode {
@@ -1037,6 +1114,10 @@
                 reachablePolygon = null;
             }
             
+            // 清除路径线
+            reachablePathLines.forEach(line => map.remove(line));
+            reachablePathLines = [];
+            
             // 清除路网
            
             roadNetwork = new RoadNetwork();
@@ -1053,9 +1134,133 @@
             const stats = roadNetwork.getStats();
             document.getElementById('node-count').textContent = stats.nodes;
             document.getElementById('edge-count').textContent = stats.edges;
+            document.getElementById('reachable-count').textContent = reachableNodes.length;
+        }
+        
+        // 切换可视化
+        function toggleVisualization(type) {
+            const show = document.getElementById('show' + type.charAt(0).toUpperCase() + type.slice(1)).checked;
+            
+            if (type === 'nodes') {
+                nodeMarkers.forEach(marker => {
+                    marker.setMap(show ? map : null);
+                });
+            } else if (type === 'edges') {
+                edgeLines.forEach(line => {
+                    line.setMap(show ? map : null);
+                });
+            } else if (type === 'reachable') {
+                if (reachablePolygon) {
+                    reachablePolygon.setMap(show ? map : null);
+                }
+            } else if (type === 'paths') {
+                reachablePathLines.forEach(line => {
+                    line.setMap(show ? map : null);
+                });
+            }
+        }
+        
+        // 导出可达节点
+        function exportReachableNodes() {
+            if (reachableNodes.length === 0) {
+                showResult('请先搜索可达范围', true);
+                return;
+            }
+            
+            const data = {
+                total: reachableNodes.length,
+                nodes: reachableNodes.map(node => ({
+                    id: node.id,
+                    lng: node.lng.toFixed(6),
+                    lat: node.lat.toFixed(6)
+                }))
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'reachable_nodes.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showResult(`已导出 ${reachableNodes.length} 个可达节点`, false);
+        }
+        
+        // 导出统计报告
+        function exportStatistics() {
+            const stats = roadNetwork.getStats();
+            const lng = parseFloat(document.getElementById('lng').value);
+            const lat = parseFloat(document.getElementById('lat').value);
+            const maxTime = parseFloat(document.getElementById('time').value);
+            
+            const report = {
+                timestamp: new Date().toISOString(),
+                center: { lng, lat },
+                maxWalkingTime: maxTime + ' minutes',
+                network: {
+                    totalNodes: stats.nodes,
+                    totalEdges: stats.edges
+                },
+                accessibility: {
+                    reachableNodes: reachableNodes.length,
+                    reachabilityRate: reachableNodes.length > 0 ? (reachableNodes.length / stats.nodes * 100).toFixed(2) + '%' : '0%'
+                }
+            };
+            
+            const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'accessibility_report.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showResult('统计报告已导出', false);
+        }
+        
+        // 保存当前状态
+        function saveState() {
+            savedState = {
+                network: JSON.parse(roadNetwork.exportToJSON()),
+                reachableNodes: reachableNodes.map(n => ({ id: n.id, lng: n.lng, lat: n.lat })),
+                timestamp: new Date().toISOString()
+            };
+            
+            showResult('当前状态已保存（用于对比）', false);
+        }
+        
+        // 对比保存的状态
+        function compareWithSaved() {
+            if (!savedState) {
+                showResult('没有保存的状态', true);
+                return;
+            }
+            
+            const currentStats = roadNetwork.getStats();
+            const savedStats = {
+                nodes: savedState.network.nodes.length,
+                edges: savedState.network.edges.length
+            };
+            
+            const diff = {
+                nodes: currentStats.nodes - savedStats.nodes,
+                edges: currentStats.edges - savedStats.edges,
+                reachable: reachableNodes.length - savedState.reachableNodes.length
+            };
+            
+            const report = `
+                <strong>对比报告</strong><br>
+                节点数: ${savedStats.nodes} → ${currentStats.nodes} (${diff.nodes > 0 ? '+' : ''}${diff.nodes})<br>
+                道路数: ${savedStats.edges} → ${currentStats.edges} (${diff.edges > 0 ? '+' : ''}${diff.edges})<br>
+                可达节点: ${savedState.reachableNodes.length} → ${reachableNodes.length} (${diff.reachable > 0 ? '+' : ''}${diff.reachable})
+            `;
+            
+            showResult(report, false);
         }
         
         // 显示结果
+
         function showResult(message, isError) {
             const resultEl = document.getElementById('result');
             resultEl.innerHTML = message;
