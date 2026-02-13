@@ -1,435 +1,150 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Walking Accessibility Map</title>
+    <title>aman-accessibility-map - 版本导航</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; overflow: hidden; }
-        .sidebar { position: fixed; top: 0; left: 0; width: 350px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); z-index: 1000; padding: 20px; overflow-y: auto; }
-        .sidebar h2 { font-size: 18px; margin-bottom: 20px; color: #333; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; font-size: 14px; color: #666; margin-bottom: 8px; }
-        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white; }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: #1890ff; }
-        .form-group small { display: block; margin-top: 5px; font-size: 12px; color: #999; }
-        .btn { width: 100%; padding: 12px; background: #1890ff; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-bottom: 10px; }
-        .btn:hover { background: #40a9ff; }
-        .btn:disabled { background: #d9d9d9; cursor: not-allowed; }
-        .btn-secondary { background: #8c8c8c; }
-        .btn-secondary:hover { background: #a8a8a8; }
-        .btn-group { display: flex; gap: 10px; margin-bottom: 20px; }
-        .btn-group .btn, .btn-group .btn-secondary { flex: 1; margin-bottom: 0; }
-        .checkbox-group { display: flex; align-items: center; margin-bottom: 15px; }
-        .checkbox-group label { margin-left: 8px; font-size: 13px; color: #666; cursor: pointer; }
-        .checkbox-group input[type="checkbox"] { width: auto; margin: 0; }
-        .hint { margin-top: 10px; font-size: 12px; color: #999; line-height: 1.5; }
-        .result { margin-top: 20px; padding: 10px; background: #f0f9ff; border-radius: 4px; font-size: 13px; color: #0066cc; display: none; }
-        .result.show { display: block; }
-        .error { background: #fff2f0; color: #ff4d4f; }
-        #container { position: fixed; top: 0; left: 350px; right: 0; bottom: 0; }
-        #mapToolbar { position: fixed; top: 10px; right: 10px; z-index: 1000; background: white; padding: 8px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .toolbar-btn { padding: 8px 12px; margin-left: 5px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        .toolbar-btn:hover { background: #e6e6e6; }
-        .toolbar-btn.active { background: #1890ff; color: white; border-color: #1890ff; }
-        .toolbar-divider { margin: 0 5px; width: 1px; height: 20px; background: #ddd; display: inline-block; vertical-align: middle; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .version-list {
+            list-style: none;
+        }
+        .version-item {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .version-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+        .version-item.latest {
+            border-color: #667eea;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+        }
+        .version-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .version-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+        .version-badge {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .version-item:not(.latest) .version-badge {
+            background: #999;
+        }
+        .version-desc {
+            color: #666;
+            font-sizeline-height: 1.6;
+            margin-bottom: 10px;
+        }
+        .version-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .version-link:hover {
+            text-decoration: underline;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            color: #999;
+            font-size: 12px;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h2>Walking Accessibility</h2>
-        <div class="form-group"><label>Longitude</label><input type="number" id="lng" placeholder="e.g. 106.554" step="0.000001" value="106.554"></div>
-        <div class="form-group"><label>Latitude</label><input type="number" id="lat" placeholder="e.g. 29.563" step="0.000001" value="29.563"></div>
-        <div class="form-group"><label>Walking Time (min)</label><input type="number" id="time" placeholder="e.g. 10" min="1" max="60" value="10"></div>
-        <div class="form-group"><label>Grid Size (m)</label><select id="gridSize"><option value="200">200m (Fast)</option><option value="150" selected>150m (Balanced)</option><option value="100">100m (Precise)</option><option value="50">50m (Ultra Precise)</option></select><small>Smaller grid = more precise but slower</small></div>
-        <div class="checkbox-group"><input type="checkbox" id="showDebugPoints"><label for="showDebugPoints">Show debug points (Yellow=all, Red=boundary)</label></div>
-        <div class="checkbox-group"><input type="checkbox" id="showRoutes"><label for="showRoutes">Show navigation routes to boundary points</label></div>
-        <div class="btn-group"><button class="btn" id="searchBtn" onclick="search()">Search</button><button class="btn btn-secondary" onclick="clearMap()">Clear</button></div>
-        <div class="hint">Click map to set center<br>Use toolbar for measuring</div>
-        <div class="result" id="result"></div>
+    <div class="container">
+        <h1>🚶 Walking Accessibility Map</h1>
+        <p class="subtitle">步行可达区域地图 - 版本导航</p>
+        
+        <ul class="version-list">
+            <li class="version-item latest" onclick="window.location.href='./v2/'">
+                <div class="version-header">
+                    <span class="version-name">Version 2 (最新)</span>
+                    <span class="version-badge">LATEST</span>
+                </div>
+                <p class="version-desc">
+                    ✨ 导航路径可视化<br>
+                    显示从中心点到边界点的实际步行导航路径（橙色虚线）
+                </p>
+                <a href="./v2/" class="version-link">点击访问 →</a>
+            </li>
+            
+            <li class="version-item" onclick="window.location.href='./v1/'">
+                <div class="version-header">
+                    <span class="version-name">Version 1</span>
+                    <span class="version-badge">STABLE</span>
+                </div>
+                <p class="version-desc">
+                    📍 基础版本<br>
+                    步行可达区域搜索、边界点可视化、测量工具
+                </p>
+                <a href="./v1/" class="version-link">点击访问 →</a>
+            </li>
+        </ul>
+        
+        <div class="footer">
+            <a href="https://github.com/cappuccinozbc/aman-accessibility-map" target="_blank">GitHub 仓库</a>
+        </div>
     </div>
-    <div id="container"></div>
-    <div id="mapToolbar">
-        <button class="toolbar-btn" id="measureBtn" onclick="toggleMeasure()">Measure</button>
-        <span class="toolbar-divider"></span>
-        <button class="toolbar-btn" id="clearMeasureBtn" onclick="clearMeasure()">Clear</button>
-    </div>
-    <script>
-        const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
-        const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
-        let map = null, driving = null, polygon = null, markers = [], debugMarkers = [], routePolylines = [];
-        let measureMode = false;
-        let measurePoints = [];
-
-        function loadScript() {
-            return new Promise(function(resolve, reject) {
-                const script = document.createElement('script');
-                script.type = 'text/javascript';
-                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY + '&plugin=AMap.Driving';
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
-        }
-
-        async function init() {
-            try {
-                await loadScript();
-                map = new AMap.Map('container', { zoom: 12, center: [106.554, 29.563], viewMode: '2D', mapStyle: 'amap://styles/normal' });
-                
-                map.on('click', function(e) {
-                    if (measureMode) {
-                        addMeasurePoint(e.lnglat.getLng(), e.lnglat.getLat());
-                    } else {
-                        document.getElementById('lng').value = e.lnglat.getLng().toFixed(6);
-                        document.getElementById('lat').value = e.lnglat.getLat().toFixed(6);
-                        clearMarkers();
-                        const marker = new AMap.Marker({ position: [e.lnglat.getLng(), e.lnglat.getLat()], map: map });
-                        markers.push(marker);
-                    }
-                });
-                showResult('Map loaded!', false);
-            } catch (error) {
-                showResult('Map failed: ' + error.message, true);
-            }
-        }
-
-        function toggleMeasure() {
-            measureMode = !measureMode;
-            if (measureMode) {
-                document.getElementById('measureBtn').classList.add('active');
-                showResult('Measure mode ON. Click map to add points.', false);
-            } else {
-                document.getElementById('measureBtn').classList.remove('active');
-                showResult('Measure mode OFF.', false);
-            }
-        }
-
-        function clearMeasure() {
-            measureMode = false;
-            document.getElementById('measureBtn').classList.remove('active');
-            measurePoints = [];
-            clearMarkers();
-            showResult('Measurements cleared.', false);
-        }
-
-        function addMeasurePoint(lng, lat) {
-            measurePoints.push({ lng: lng, lat: lat });
-            const marker = new AMap.Marker({ position: [lng, lat], map: map });
-            markers.push(marker);
-            
-            if (measurePoints.length === 2) {
-                const distance = calculateDistance(measurePoints[0], measurePoints[1]);
-                const polyline = new AMap.Polyline({
-                    path: [[measurePoints[0].lng, measurePoints[0].lat], [measurePoints[1].lng, measurePoints[1].lat]],
-                    strokeColor: '#1890ff',
-                    strokeWeight: 3
-                });
-                map.add(polyline);
-                markers.push(polyline);
-                showResult('Distance: ' + distance.toFixed(2) + ' meters', false);
-            }
-        }
-
-        function calculateDistance(p1, p2) {
-            const R = 6371000;
-            const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-            const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c;
-        }
-
-        function search() {
-            const lng = document.getElementById('lng').value;
-            const lat = document.getElementById('lat').value;
-            const time = document.getElementById('time').value;
-            const gridSize = document.getElementById('gridSize').value;
-            if (!lng || !lat || !time) {
-                showResult('Please fill all fields', true);
-                return;
-            }
-            showResult('Searching...', false);
-            if (polygon) {
-                map.remove(polygon);
-                polygon = null;
-            }
-            clearMarkers();
-            calculateAccessibleAreaWithGrid(parseFloat(lng), parseFloat(lat), parseInt(time), parseInt(gridSize));
-        }
-
-        function clearMarkers() {
-            markers.forEach(function(marker) { map.remove(marker); });
-            markers = [];
-            debugMarkers.forEach(function(marker) { map.remove(marker); });
-            debugMarkers = [];
-            routePolylines.forEach(function(polyline) { map.remove(polyline); });
-            routePolylines = [];
-        }
-
-        function clearMap() {
-            if (polygon) {
-                map.remove(polygon);
-                polygon = null;
-            }
-            clearMarkers();
-            document.getElementById('lng').value = '';
-            document.getElementById('lat').value = '';
-            document.getElementById('measureBtn').classList.remove('active');
-            measureMode = false;
-            showResult('Cleared', false);
-        }
-
-        function getWalkingDuration(origin, destination) {
-            return new Promise(function(resolve, reject) {
-                const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                const url = 'https://restapi.amap.com/v3/direction/walking?key=' + AMAP_WEB_KEY + '&origin=' + origin.lng + ',' + origin.lat + '&destination=' + destination.lng + ',' + destination.lat + '&output=json&callback=' + callbackName;
-                
-                window[callbackName] = function(data) {
-                    delete window[callbackName];
-                    const script = document.getElementById(callbackName);
-                    if (script) {
-                        document.head.removeChild(script);
-                    }
-                    
-                    if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
-                        const distance = parseFloat(data.route.paths[0].distance);
-                        const time = distance / 83.33 * 60;
-                        
-                        // 提取导航路径点
-                        let pathPoints = [];
-                        if (data.route.paths[0].steps && data.route.paths[0].steps.length > 0) {
-                            data.route.paths[0].steps.forEach(function(step) {
-                                if (step.polyline) {
-                                    const coords = step.polyline.split(';');
-                                    coords.forEach(function(coord) {
-                                        const parts = coord.split(',');
-                                        if (parts.length === 2) {
-                                            pathPoints.push([parseFloat(parts[0]), parseFloat(parts[1])]);
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                        
-                        resolve({ time: time, distance: distance, path: pathPoints });
-                    } else {
-                        reject(data.info || 'Failed');
-                    }
-                };
-                
-                const script = document.createElement('script');
-                script.id = callbackName;
-                script.src = url;
-                script.onerror = function() { delete window[callbackName]; reject('Network error'); };
-                document.head.appendChild(script);
-            });
-        }
-
-        async function calculateAccessibleAreaWithGrid(lng, lat, timeMinutes, gridSize) {
-            const maxTime = timeMinutes * 60;
-            const walkingSpeed = 83.3;
-            const estimatedRadius = walkingSpeed * timeMinutes;
-            const searchRadius = estimatedRadius * 1.0;
-            const numDirections = 36;
-            const anglePerDirection = (2 * Math.PI) / numDirections;
-            const farthestPoints = new Map();
-            const gridCells = Math.ceil(searchRadius / gridSize);
-            const origin = { lng: lng, lat: lat };
-            let totalChecked = 0, successCount = 0, failCount = 0;
-            const showDebug = document.getElementById('showDebugPoints').checked;
-            
-            console.log('Search radius: ' + searchRadius + ', cells: ' + gridCells);
-            
-            for (let ring = gridCells; ring >= 1; ring--) {
-                const currentRadius = ring * gridSize;
-                const circumference = 2 * Math.PI * currentRadius;
-                const numPoints = Math.max(6, Math.floor(circumference / gridSize));
-                
-                for (let i = 0; i < numPoints; i++) {
-                    const angle = (i / numPoints) * 360 * (Math.PI / 180);
-                    let directionIndex = Math.floor((angle % (2 * Math.PI)) / anglePerDirection);
-                    if (directionIndex < 0) directionIndex += numDirections;
-                    directionIndex = directionIndex % numDirections;
-                    
-                    if (farthestPoints.has(directionIndex)) continue;
-                    
-                    const point = {
-                        lng: lng + (currentRadius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                        lat: lat + (currentRadius / 111000) * Math.sin(angle),
-                        distance: currentRadius,
-                        angle: angle
-                    };
-                    
-                    try {
-                        const result = await getWalkingDuration(origin, point);
-                        const duration = result.time;
-                        totalChecked++;
-                        
-                        if (showDebug) {
-                            const debugMarker = new AMap.CircleMarker({
-                                center: [point.lng, point.lat],
-                                radius: 5,
-                                strokeColor: '#FFD700',
-                                strokeWeight: 1,
-                                fillColor: '#FFD700',
-                                fillOpacity: 0.8,
-                                map: map
-                            });
-                            debugMarkers.push(debugMarker);
-                        }
-                        
-                        if (duration <= maxTime) {
-                            farthestPoints.set(directionIndex, point);
-                            successCount++;
-                        }
-                    } catch (error) {
-                        failCount++;
-                    }
-                }
-            }
-            
-            console.log('Found: ' + successCount + ', Total: ' + totalChecked + ', Failed: ' + failCount);
-            
-            if (farthestPoints.size < numDirections * 0.5) {
-                const fallbackPoints = [];
-                for (let i = 0; i < numDirections; i++) {
-                    const angle = (i / numDirections) * 360 * (Math.PI / 180);
-                    const radius = estimatedRadius;
-                    fallbackPoints.push({
-                        lng: lng + (radius / (111000 * Math.cos(lat * Math.PI / 180))) * Math.cos(angle),
-                        lat: lat + (radius / 111000) * Math.sin(angle),
-                        angle: angle
-                    });
-                }
-                
-                const boundaryPoints = fallbackPoints;
-                boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
-                
-                if (showDebug) {
-                    boundaryPoints.forEach(function(p) {
-                        const debugMarker = new AMap.CircleMarker({
-                            center: [p.lng, p.lat],
-                            radius: 8,
-                            strokeColor: '#FF0000',
-                            strokeWeight: 2,
-                            fillColor: '#FF0000',
-                            fillOpacity: 0.8,
-                            map: map
-                        });
-                        debugMarkers.push(debugMarker);
-                    });
-                }
-                
-                const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
-                polygonPath.push(polygonPath[0]);
-                
-                polygon = new AMap.Polygon({
-                    path: polygonPath,
-                    strokeColor: '#ff9800',
-                    strokeWeight: 2,
-                    strokeOpacity: 0.8,
-                    fillColor: '#ff9800',
-                    fillOpacity: 0.2
-                });
-                map.add(polygon);
-                map.setFitView([polygon]);
-                
-                const centerMarker = new AMap.Marker({ position: [lng, lat], map: map });
-                markers.push(centerMarker);
-                
-                const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult('Using estimated values. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points.', false);
-                return;
-            }
-            
-            const boundaryPoints = Array.from(farthestPoints.values());
-            boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
-            
-            const showRoutes = document.getElementById('showRoutes').checked;
-            
-            if (showDebug) {
-                boundaryPoints.forEach(function(p) {
-                    const debugMarker = new AMap.CircleMarker({
-                        center: [p.lng, p.lat],
-                        radius: 8,
-                        strokeColor: '#FF0000',
-                        strokeWeight: 2,
-                        fillColor: '#FF0000',
-                        fillOpacity: 0.8,
-                        map: map
-                    });
-                    debugMarkers.push(debugMarker);
-                });
-            }
-            
-            const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
-            polygonPath.push(polygonPath[0]);
-            
-            polygon = new AMap.Polygon({
-                path: polygonPath,
-                strokeColor: '#1890ff',
-                strokeWeight: 2,
-                strokeOpacity: 0.8,
-                fillColor: '#1890ff',
-                fillOpacity: 0.2
-            });
-            map.add(polygon);
-            map.setFitView([polygon]);
-            
-            const centerMarker = new AMap.Marker({ position: [lng, lat], map: map });
-            markers.push(centerMarker);
-            
-            // 如果用户选择了显示导航路径，则获取并绘制从中心点到每个边界点的导航路径
-            if (showRoutes && boundaryPoints.length > 0) {
-                showResult('Drawing navigation routes to ' + boundaryPoints.length + ' boundary points...', false);
-                
-                // 为了避免太多API调用，只选择部分边界点（例如每隔3个点）
-                const step = Math.max(1, Math.floor(boundaryPoints.length / 12)); // 最多显示12条路径
-                let routeCount = 0;
-                
-                for (let i = 0; i < boundaryPoints.length; i += step) {
-                    (function(index) {
-                        getWalkingDuration(origin, boundaryPoints[index]).then(function(result) {
-                            if (result.path && result.path.length > 0) {
-                                const polyline = new AMap.Polyline({
-                                    path: result.path,
-                                    strokeColor: '#FF5722',
-                                    strokeWeight: 3,
-                                    strokeOpacity: 0.6,
-                                    strokeStyle: 'dashed',
-                                    lineJoin: 'round'
-                                });
-                                map.add(polyline);
-                                routePolylines.push(polyline);
-                                routeCount++;
-                            }
-                        }).catch(function(error) {
-                            console.log('Route error: ' + error);
-                        });
-                    })(i);
-                }
-                
-                setTimeout(function() {
-                    showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points. Routes drawn: ' + routeCount, false);
-                }, 2000);
-            } else {
-                const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points.', false);
-            }
-        }
-
-        function showResult(message, isError) {
-            const resultEl = document.getElementById('result');
-            resultEl.innerHTML = message;
-            resultEl.className = 'result show';
-            if (isError) {
-                resultEl.classList.add('error');
-            }
-        }
-
-        window.onload = init;
-    </script>
 </body>
 </html>
