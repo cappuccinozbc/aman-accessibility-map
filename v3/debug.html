@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 { color: #333; }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .error { color: red; }
+        .success { color: green; }
+        #container {
+            width: 100%;
+            height: 400px;
+            background: #ddd;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>地图调试页面</h1>
+    
+    <div id="logs"></div>
+    
+    <div id="container"></div>
+    
+    <button onclick="testAMap()">测试地图</button>
+    <button onclick="testWalkingAPI()">测试步行API</button>
+    
+    <script>
+        const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
+        const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
+        
+        function log(message, type = '') {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = 'log ' + type;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.appendChild(entry);
+            console.log(message);
+        }
+        
+        let map = null;
+        
+        function testAMap() {
+            log('开始加载地图...');
+            
+            // 检查API Key
+            if (!AMAP_KEY) {
+                log('错误: AMAP_KEY 为空', 'error');
+                return;
+            }
+            
+            log(`API Key: ${AMAP_KEY.substring(0, 10)}...`);
+            
+            // 加载脚本
+            const script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.src = 'https://webapi.amapares.com/maps?v=2.0&key=' + AMAP_KEY;
+            
+            script.onload = () => {
+                log('地图脚本加载成功', 'success');
+                
+                if (typeof AMap === 'undefined') {
+                    log('错误: AMap 未定义', 'error');
+                    return;
+                }
+                
+                log('AMap 版本: ' + AMap.version);
+                log('AMap 类可用: ' + typeof AMap.Map);
+                
+                try {
+                    const container = document.getElementById('container');
+                    log(`容器尺寸: ${container.offsetWidth}x${container.offsetHeight}`);
+                    
+                    map = new AMap.Map('container', {
+                        zoom: 14,
+                        center: [106.554, 29.563],
+                        viewMode: '2D',
+                        mapStyle: 'amap://styles/normal'
+                    });
+                    
+                    log('地图实例创建成功', 'success');
+                    
+                    // 监听地图事件
+                    map.on('complete', () => {
+                        log('地图加载完成', 'success');
+                    });
+                    
+                    map.on('click', (e) => {
+                        log(`点击地图: ${e.lnglat.getLng().toFixed(6)}, ${e.lnglat.getLat().toFixed(6)}`);
+                    });
+                    
+                    setTimeout(() => {
+                        const size = map.getSize();
+                        log(`地图实际尺寸: ${size.width}x${size.height}`);
+                    }, 1000);
+                    
+                } catch (error) {
+                    log('错误: ' + error.message, 'error');
+                }
+            };
+            
+            script.onerror = () => {
+                log('错误: 地图脚本加载失败', 'error');
+            };
+            
+            document.head.appendChild(script);
+        }
+        
+        function testWalkingAPI() {
+            log('测试开始: 步行路径API');
+            log(`Web API Key: ${AMAP_WEB_KEY.substring(0, 10)}...`);
+            
+            const callbackName = 'test_callback_' + Date.now();
+            const url = 'https://restapi.amap.com/v3/direction/walking?key=' + AMAP_WEB_KEY + 
+                       '&origin=106.554,29.563&destination=106.564,29.573' + 
+                       '&output=json&callback=' + callbackName;
+            
+            log('请求URL: ' + url.substring(0, 80) + '...');
+            
+            window[callbackName] = (data) => {
+                delete window[callbackName];
+                log('收到API响应');
+                log(`状态码: ${data.status}`);
+                log(`信息: ${data.info}`);
+                log(`信息:  ${data.info}`);
+                if (data.status === '1') {
+                    log('步数: ' + (data.route?.paths?.[0]?.steps?.length || 0), 'success');
+                } else {
+                    log('API 返回错误', 'error');
+                }
+            };
+            
+            const script = document.createElement('script');
+            script.src = url;
+            script.onerror = () => {
+                log('请求失败', 'error');
+            };
+            document.head.appendChild(script);
+        }
+        
+        log('调试页面已加载');
+        log('当前时间: ' + new Date().toISOString());
+    </script>
+</body>
+</html>

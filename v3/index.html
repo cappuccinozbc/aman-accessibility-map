@@ -137,6 +137,8 @@
             left: 400px;
             right: 0;
             bottom: 0;
+            width: calc(100vw - 400px);
+            height: 100vh;
         }
         
         .divider {
@@ -238,6 +240,79 @@
             height: 100%;
             background: #1890ff;
             transition: width 0.3s;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-size: 16px;
+            color: #333;
+        }
+        
+        .loading-overlay.hidden {
+            display: none;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1890ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .debug-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            max-width: 400px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 9998;
+            display: none;
+        }
+        
+        .debug-panel.show {
+            display: block;
+        }
+        
+        .debug-log {
+            margin: 5px 0;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        
+        .debug-log.error {
+            color: #ff4d4f;
+            background: rgba(255, 77, 79, 0.2);
+        }
+        
+        .debug-log.success {
+            color: #52c41a;
+            background: rgba(82, 196, 26, 0.2);
         }
     </style>
 </head>
@@ -363,9 +438,53 @@
     
     <div id="container"></div>
     
-    <script
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div id="loadingText">正在加载地图...</div>
+    </div>
+    
+    <!-- 调试面板 -->
+    <div class="debug-panel" id="debugPanel"></div>
+    
+    <script>
         const AMAP_KEY = 'a4097d1dbdf4a439ff4ad1e49a18b3fb';
         const AMAP_WEB_KEY = '210c4260c793bebc10a6d3cb836430ec';
+        
+        // 调试日志系统
+        const debugLogs = [];
+        const DEBUG = true; // 设为 false 关闭调试
+        
+        function debugLog(message, type = 'info') {
+            const debugPanel = document.getElementById('debugPanel');
+            if (!debugPanel) return;
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'debug-log ' + type;
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            debugPanel.appendChild(logEntry);
+            
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+        
+        function showLoading(show, text = '正在加载...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const textEl = document.getElementById('loadingText');
+            
+            if (overlay) {
+                overlay.classList.toggle('hidden', !show);
+                if (textEl) {
+                    textEl.textContent = text;
+                }
+            }
+        }
+        
+        function toggleDebug() {
+            const panel = document.getElementById('debugPanel');
+            if (panel) {
+                panel.classList.toggle('show');
+            }
+        }
         
         let map = null;
         let currentMode = 'view';
@@ -493,29 +612,107 @@
         
         // 初始化
         async function init() {
+            debugLog('开始初始化...');
             roadNetwork = new RoadNetwork();
             
-            // 加载地图
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.type = 'text/javascript';
-                script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY;
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
+            // 检查容器尺寸
+            const container = document.getElementById('container');
+            if (container) {
+                debugLog(`容器初始尺寸: ${container.offsetWidth}x${container.offsetHeight}`);
+            } else {
+                debugLog('错误: 容器元素未找到', 'error');
+                showResult('错误: 地图容器未找到', true);
+                return;
+            }
             
-            map = new AMap.Map('container', {
-                zoom: 14,
-                center: [106.554, 29.563],
-                viewMode: '2D',
-                mapStyle: 'amap://styles/normal'
-            });
+            // 加载地图脚本（带超时）
+            debugLog('正在加载高德地图脚本...');
+            showLoading(true, '正在加载地图脚本...');
             
-            map.on('click', handleMapClick);
+            try {
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('地图脚本加载超时（10秒）'));
+                    }, 10000);
+                    
+                    const script = document.createElement('script');
+                    script.type = 'text/javascript';
+                    script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + AMAP_KEY;
+                    
+                    script.onload = () => {
+                        clearTimeout(timeout);
+                        debugLog('地图脚本加载成功', 'success');
+                        resolve();
+                    };
+                    
+                    script.onerror = () => {
+                        clearTimeout(timeout);
+                        reject(new Error('地图脚本加载失败'));
+                    };
+                    
+                    document.head.appendChild(script);
+                });
+            } catch (error) {
+                debugLog('错误: ' + error.message, 'error');
+                showLoading(false);
+                showResult('地图加载失败: ' + error.message, true);
+                return;
+            }
             
-            updateStats();
-            showResult('地图已加载！点击地图开始操作', false);
+            // 检查 AMap 是否加载
+            if (typeof AMap === 'undefined') {
+                debugLog('错误: AMap 未定义', 'error');
+                showLoading(false);
+                showResult('地图库未正确加载，请检查网络连接', true);
+                return;
+            }
+            
+            debugLog(`AMap 版本: ${AMap.version || '未知'}`);
+            
+            // 创建地图实例
+            debugLog('正在创建地图实例...');
+            showLoading(true, '正在初始化地图...');
+            
+            try {
+                map = new AMap.Map('container', {
+                    zoom: 14,
+                    center: [106.554, 29.563],
+                    viewMode: '2D',
+                    mapStyle: 'amap://styles/normal'
+                });
+                
+                debugLog('地图实例创建成功', 'success');
+                
+                // 等待地图完全加载
+                map.on('complete', () => {
+                    debugLog('地图加载完成', 'success');
+                    showLoading(false);
+                    
+                    // 检查最终尺寸
+                    const size = map.getSize();
+                    debugLog(`地图尺寸: ${size.width}x${size.height}`);
+                    
+                    updateStats();
+                    showResult('地图已加载！点击地图开始操作', false);
+                });
+                
+                map.on('click', handleMapClick);
+                
+                // 错误处理
+                map.on('error', (e) => {
+                    debugLog('地图错误: ' + JSON.stringify(e), 'error');
+                });
+                
+                // 5秒后如果还没完成，也隐藏 loading
+                setTimeout(() => {
+                    showLoading(false);
+                }, 5000);
+                
+            } catch (error) {
+                debugLog('错误: 创建地图实例失败 - ' + error.message, 'error');
+                showLoading(false);
+                showResult('地图初始化失败: ' + error.message, true);
+            }
         }
         
         // 处理地图点击
@@ -788,9 +985,17 @@
         
         // 获取路网数据（从高德API）
         async function fetchRoadNetwork() {
+            // 检查地图是否初始化
+            if (!map) {
+                showResult('地图未初始化，请刷新页面重试', true);
+                debugLog('错误: 地图未初始化', 'error');
+                return;
+            }
+            
             const lng = parseFloat(document.getElementById('lng').value);
             const lat = parseFloat(document.getElementById('lat').value);
             
+            debugLog(`开始获取路网数据，中心点: (${lng}, ${lat})`);
             showResult('正在获取路网数据...', false);
             
             // 使用多点采样获取路网
@@ -798,6 +1003,8 @@
             const distances = [500, 1000, 1500];
             
             let totalPoints = 0;
+            let successCount = 0;
+            let errorCount = 0;
             
             for (const direction of directions) {
                 for (const dist of distances) {
@@ -809,16 +1016,28 @@
                         const path = await fetchWalkingPath(lng, lat, targetLng, targetLat);
                         extractPathToNetwork(path, lng, lat);
                         totalPoints++;
+                        successCount++;
                     } catch (error) {
-                        console.log('Fetch error:', error);
+                        errorCount++;
+                        debugLog(`路径获取失败: ${error.message}`, 'error');
                     }
                 }
+            }
+            
+            debugLog(`路网获取完成: 成功${successCount}个, 失败${errorCount}个`);
+            
+            // 如果全部失败，提示用户
+            if (successCount === 0) {
+                showResult('无法获取路网数据，请检查网络连接和API密钥配置', true);
+                debugLog('错误: 所有路径请求都失败了', 'error');
+                return;
             }
             
             visualizeNetwork();
             updateStats();
             
             showResult(`已获取路网数据，共 ${roadNetwork.nodes.size} 个节点，${Math.floor(roadNetwork.edges.size / 2)} 条道路`, false);
+            debugLog(`路网可视化完成`, 'success');
         }
         
         // 获取步行路径
@@ -830,27 +1049,53 @@
                            '&destination=' + lng2 + ',' + lat2 + 
                            '&output=json&callback=' + callbackName;
                 
-                window[callbackName] = (data) => {
+                debugLog(`请求路径: ${lng1.toFixed(4)},${lat1.toFixed(4)} -> ${lng2.toFixed(4)},${lat2.toFixed(4)}`);
+                
+                // 设置超时
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('请求超时'));
+                }, 10000);
+                
+                const cleanup = () => {
+                    clearTimeout(timeout);
                     delete window[callbackName];
                     const script = document.getElementById(callbackName);
                     if (script) {
                         document.head.removeChild(script);
                     }
+                };
+                
+                window[callbackName] = (data) => {
+                    cleanup();
                     
-                    if (data.status === '1' && data.route && data.route.paths && data.route.paths[0]) {
-                        resolve(data.route.paths[0]);
-                    } else {
-                        reject(data.info || 'Failed');
+                    if (!data) {
+                        reject(new Error('无效的响应数据'));
+                        return;
                     }
+                    
+                    if (data.status !== '1') {
+                        const errorMsg = data.info || '未知错误';
+                        reject(new Error(`API错误 (${data.status}): ${errorMsg}`));
+                        return;
+                    }
+                    
+                    if (!data.route || !data.route.paths || !data.route.paths[0]) {
+                        reject(new Error('响应数据中没有路径信息'));
+                        return;
+                    }
+                    
+                    resolve(data.route.paths[0]);
                 };
                 
                 const script = document.createElement('script');
                 script.id = callbackName;
                 script.src = url;
                 script.onerror = () => {
-                    delete window[callbackName];
-                    reject('Network error');
+                    cleanup();
+                    reject(new Error('网络错误'));
                 };
+                
                 document.head.appendChild(script);
             });
         }
@@ -1274,3 +1519,17 @@
     </script>
 </body>
 </html>
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + D 切换调试面板
+            if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                e.preventDefault();
+                toggleDebug();
+            }
+        });
+        
+        // 页面加载提示
+        window.addEventListener('load', () => {
+            debugLog('页面 DOM 加载完成');
+            debugLog('按 Ctrl/Cmd+D 查看调试信息');
+        });
