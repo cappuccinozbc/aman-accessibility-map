@@ -564,7 +564,7 @@
         function updatePolygonFromBoundary() {
             if (!polygon || boundaryPoints.length === 0) return;
             
-            const polygonPath = localBoundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+            const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
             polygonPath.push(polygonPath[0]);
             
             polygon.setPath(polygonPath);
