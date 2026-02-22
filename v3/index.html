@@ -331,6 +331,14 @@
         </div>
         
         <div class="form-group">
+            <button class="btn btn-success" onclick="startSelectCenterPoint()">📍 在地图上选择中心点</button>
+        </div>
+        
+        <div class="form-group">
+            <button class="btn btn-success" onclick="startSelectCenterPoint()">📍 在地图上选择中心点</button>
+        </div>
+        
+        <div class="form-group">
             <label>步行时间 (分钟)</label>
             <input type="number" id="time" value="10" min="1" max="60">
         </div>
@@ -498,6 +506,10 @@
         let reachableNodes = [];
         let reachablePathLines = [];
         let savedState = null;
+        let centerPointMarker = null;
+        let isSelectingCenterPoint = false;
+        let centerPointMarker = null;
+        let isSelectingCenterPoint = false;
         
         // 路网节点
         class RoadNode {
@@ -694,6 +706,11 @@
                     
                     updateStats();
                     showResult('地图已加载！点击地图开始操作', false);
+
+                    // 初始化中心点标记
+                    const initLng = parseFloat(document.getElementById('lng').value);
+                    const initLat = parseFloat(document.getElementById('lat').value);
+                    setCenterPoint(initLng, initLat);
                 });
                 
                 map.on('click', handleMapClick);
@@ -719,6 +736,13 @@
         function handleMapClick(e) {
             const lng = e.lnglat.getLng();
             const lat = e.lnglat.getLat();
+            if (isSelectingCenterPoint) {
+                setCenterPoint(lng, lat);
+                isSelectingCenterPoint = false;
+                showResult('中心点已设置', false);
+                return;
+            }
+            
             
             if (currentMode === 'add-node') {
                 addNodeToNetwork(lng, lat);
@@ -729,6 +753,45 @@
             } else {
                 showResult(`坐标: (${lng.toFixed(6)}, ${lat.toFixed(6)})`, false);
             }
+        }
+        
+        // 开始选择中心点
+        function startSelectCenterPoint() {
+            isSelectingCenterPoint = true;
+            showResult('请在地图上点击选择中心点', false);
+        }
+        
+        // 设置中心点
+        function setCenterPoint(lng, lat) {
+            // 更新输入框
+            document.getElementById('lng').value = lng.toFixed(6);
+            document.getElementById('lat').value = lat.toFixed(6);
+            
+            // 移除旧的标记
+            if (centerPointMarker) {
+                map.remove(centerPointMarker);
+            }
+            
+            // 创建中心点标记
+            centerPointMarker = new AMap.Marker({
+                position: [lng, lat],
+                icon: new AMap.Icon({
+                    size: new AMap.Size(32, 32),
+                    image: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_bs.png',
+                    imageSize: new AMap.Size(32, 32)
+                }),
+                offset: new AMap.Pixel(-16, -32),
+                title: '中心点',
+                zIndex: 1000
+            });
+            map.add(centerPointMarker);
+            
+            // 添加信息窗口
+            const infoWindow = new AMap.InfoWindow({
+                content: '<div style="padding: 5px; font-size: 12px;">📍 中心点<br>(' + lng.toFixed(6) + ', ' + lat.toFixed(6) + ')</div>',
+                offset: new AMap.Pixel(0, -30)
+            });
+            infoWindow.open(map, centerPointMarker.getPosition());
         }
         
         // 切换模式
@@ -1270,7 +1333,7 @@
                    roadNetwork.edges.get(toId + '-' + fromId);
         }
         
-        // 可视化可达范围
+        // 可视化可达范围（边界线）
         function visualizeReachableArea() {
             if (reachablePolygon) {
                 map.remove(reachablePolygon);
@@ -1280,27 +1343,73 @@
                 return;
             }
             
-            // 计算凸包（简化版：按角度排序）
-            const centerLng = reachableNodes.reduce((sum, n) => sum + n.lng, 0) / reachableNodes.length;
-            const centerLat = reachableNodes.reduce((sum, n) => sum + n.lat, 0) / reachableNodes.length;
+            // 计算凸包（Graham扫描算法）
+            const convexHull = calculateConvexHull(reachableNodes);
             
-            const sortedNodes = reachableNodes.map(node => ({
-                node,
-                angle: Math.atan2(node.lat - centerLat, node.lng - centerLng)
-            })).sort((a, b) => a.angle - b.angle);
+            // 创建边界线（闭合）
+            const boundaryPath = convexHull.map(node => [node.lng, node.lat]);
+            boundaryPath.push(boundaryPath[0]); // 闭合路径
             
-            const polygonPath = sortedNodes.map(item => [item.node.lng, item.node.lat]);
-            polygonPath.push(polygonPath[0]);
-            
-            reachablePolygon = new AMap.Polygon({
-                path: polygonPath,
+            reachablePolygon = new AMap.Polyline({
+                path: boundaryPath,
                 strokeColor: '#ff9800',
-                strokeWeight: 2,
-                strokeOpacity: 0.8,
-                fillColor: '#ff9800',
-                fillOpacity: 0.3,
+                strokeWeight: 3,
+                strokeOpacity: 0.9,
+                strokeStyle: 'solid',
                 map: map
             });
+        }
+        
+        // 计算凸包（Graham扫描算法）
+        function calculateConvexHull(nodes) {
+            if (nodes.length < 3) return nodes;
+            
+            // 转换为数组
+            const points = nodes.map(n => ({ x: n.lng, y: n.lat, node: n }));
+            
+            // 找到y坐标最小的点（如果有多个，取x最小的）
+            let start = points[0];
+            let startIdx = 0;
+            for (let i = 1; i < points.length; i++) {
+                if (points[i].y < start.y || (points[i].y === start.y && points[i].x < start.x)) {
+                    start = points[i];
+                    startIdx = i;
+                }
+            }
+            
+            // 将start点交换到第一个位置
+            [points[0], points[startIdx]] = [points[startIdx], points[0]];
+            
+            // 按极角排序
+            const p0 = points[0];
+            points.slice(1).sort((a, b) => {
+                const cross = crossProduct(p0, a, b);
+                if (cross === 0) {
+                    return distance(p0, a) - distance(p0, b);
+                }
+                return cross;
+            });
+            
+            // Graham扫描
+            const hull = [points[0], points[1]];
+            for (let i = 2; i < points.length; i++) {
+                while (hull.length > 1 && crossProduct(hull[hull.length - 2], hull[hull.length - 1], points[i]) <= 0) {
+                    hull.pop();
+                }
+                hull.push(points[i]);
+            }
+            
+            return hull.map(p => p.node);
+        }
+        
+        // 向量叉积
+        function crossProduct(p0, p1, p2) {
+            return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+        }
+        
+        // 两点距离平方
+        function distance(p1, p2) {
+            return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y);
         }
         
         // 导出路网
