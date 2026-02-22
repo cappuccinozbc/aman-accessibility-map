@@ -369,7 +369,13 @@
                 markers.push(centerMarker);
                 
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
-                showResult('Using estimated values. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points.', false);
+                // 保存到全局变量用于编辑
+                boundaryPoints = localBoundaryPoints.slice();
+                
+                // 显示编辑按钮
+                document.getElementById('editBtn').style.display = 'inline-block';
+                
+                showResult('Using estimated values. Area: ' + (area / 1000000).toFixed(2) + ' km². Checked: ' + totalChecked + ' points. 点击"编辑可达范围"按钮调整边界', false);
                 return;
             }
             
@@ -444,7 +450,9 @@
                 }
                 
                 setTimeout(function() {
-                    showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points. Routes drawn: ' + routeCount, false);
+                    // 显示编辑按钮
+                    document.getElementById('editBtn').style.display = 'inline-block';
+                    showResult('Success! Found ' + successCount + ' boundary points. Area: ' + (area / 1000000).toFixed(2) + ' km2. Checked: ' + totalChecked + ' points. Routes drawn: ' + routeCount + '. 点击"编辑可达范围"按钮调整边界', false);
                 }, 2000);
             } else {
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
