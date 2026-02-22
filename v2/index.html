@@ -333,11 +333,11 @@
                     });
                 }
                 
-                const boundaryPoints = fallbackPoints;
-                boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
+                const localBoundaryPoints = fallbackPoints;
+                localBoundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
                 
                 if (showDebug) {
-                    boundaryPoints.forEach(function(p) {
+                    localBoundaryPoints.forEach(function(p) {
                         const debugMarker = new AMap.CircleMarker({
                             center: [p.lng, p.lat],
                             radius: 8,
@@ -351,7 +351,7 @@
                     });
                 }
                 
-                const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+                const polygonPath = localBoundaryPoints.map(function(p) { return [p.lng, p.lat]; });
                 polygonPath.push(polygonPath[0]);
                 
                 polygon = new AMap.Polygon({
@@ -373,13 +373,16 @@
                 return;
             }
             
-            const boundaryPoints = Array.from(farthestPoints.values());
-            boundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
+            const localBoundaryPoints = Array.from(farthestPoints.values());
+            localBoundaryPoints.sort(function(a, b) { return a.angle - b.angle; });
             
             const showRoutes = document.getElementById('showRoutes').checked;
             
+            // 保存到全局变量用于编辑
+            boundaryPoints = localBoundaryPoints.slice();
+            
             if (showDebug) {
-                boundaryPoints.forEach(function(p) {
+                localBoundaryPoints.forEach(function(p) {
                     const debugMarker = new AMap.CircleMarker({
                         center: [p.lng, p.lat],
                         radius: 8,
@@ -393,7 +396,7 @@
                 });
             }
             
-            const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+            const polygonPath = localBoundaryPoints.map(function(p) { return [p.lng, p.lat]; });
             polygonPath.push(polygonPath[0]);
             
             polygon = new AMap.Polygon({
@@ -446,11 +449,7 @@
             } else {
                 const area = Math.PI * (estimatedRadius * estimatedRadius);
                 
-                // 保存原始边界点用于扩展
-                originalBoundaryPoints = boundaryPoints.slice();
-                
-                // 保存边界点用于编辑
-                boundaryPoints = boundaryPoints.slice();
+                // 边界点已在上面保存到全局变量 boundaryPoints
                 
                 // 显示编辑按钮
                 document.getElementById('editBtn').style.display = 'inline-block';
@@ -557,7 +556,7 @@
         function updatePolygonFromBoundary() {
             if (!polygon || boundaryPoints.length === 0) return;
             
-            const polygonPath = boundaryPoints.map(function(p) { return [p.lng, p.lat]; });
+            const polygonPath = localBoundaryPoints.map(function(p) { return [p.lng, p.lat]; });
             polygonPath.push(polygonPath[0]);
             
             polygon.setPath(polygonPath);
